@@ -19,8 +19,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Default master key for this project
-DEFAULT_MASTER_KEY = "zhanxiaopi"
+# Master key must be provided via environment variable
+# DO NOT use hardcoded keys in production!
+# Set API_KEY_MASTER_KEY environment variable with a secure random key
 
 def derive_fernet_key(master_key: str) -> bytes:
     """Derive a valid Fernet key from a string | 从字符串派生有效的Fernet密钥"""
@@ -38,9 +39,10 @@ class APIKeySecurity:
         Args:
             master_key: Master key for encryption. If None, uses environment variable.
         """
-        self.master_key = master_key or os.getenv("API_KEY_MASTER_KEY") or DEFAULT_MASTER_KEY
-        if not os.getenv("API_KEY_MASTER_KEY"):
-            logger.info("Using default API_KEY_MASTER_KEY for MediCare_AI")
+        self.master_key = master_key or os.getenv("API_KEY_MASTER_KEY")
+        if not self.master_key:
+            logger.error("API_KEY_MASTER_KEY environment variable is not set!")
+            raise ValueError("API_KEY_MASTER_KEY environment variable is required for secure operation")
         
         # Derive encryption key from master key
         self.fernet = self._create_fernet()

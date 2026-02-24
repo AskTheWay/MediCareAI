@@ -3,6 +3,10 @@ import { CONFIG } from '../lib/config';
 import { useAuthStore } from '../store/authStore';
 import type {
   ApiResponse,
+  ApiErrorResponse,
+  BackendRegisterData,
+  AIModelConfigs,
+  AIModelConfig,
   User,
   Token,
   LoginCredentials,
@@ -89,7 +93,7 @@ apiClient.interceptors.response.use(
       }
     }
 
-    const responseData = error.response?.data as any;
+    const responseData = error.response?.data as ApiErrorResponse;
     const errorMessage = responseData?.detail || responseData?.message || error.message;
     console.error('API Error:', errorMessage);
     return Promise.reject(new Error(errorMessage));
@@ -147,8 +151,8 @@ export const authApi = {
   register: (data: RegisterData) => {
     const { role, title, department, hospital, license_number, specialty, address, terms, emergency_contact, ...baseData } = data;
     
-    const backendRequestData: any = {
-      ...baseData,
+    const backendRequestData: BackendRegisterData = {
+      ...baseData as BackendRegisterData,
     };
     
     if (emergency_contact) {
@@ -228,6 +232,15 @@ export const documentsApi = {
   },
   getDocument: (id: string) => api.get<MedicalDocument>(`/documents/${id}`),
   extract: (id: string) => api.post<ExtractedContent>(`/documents/${id}/extract`),
+  getDocumentContent: (id: string) => api.get<{
+    document_id: string;
+    filename: string;
+    upload_status: string;
+    extracted_content?: string;
+    cleaned_content?: string;
+    error?: string;
+    message?: string;
+  }>(`/documents/${id}/content`),
 };
 
 export const aiApi = {
@@ -474,14 +487,9 @@ export const adminApi = {
   }> }>('/admin/knowledge-base/documents'),
   deleteKnowledgeDocument: (docId: string) => api.delete<void>(`/admin/knowledge-base/documents/${docId}`),
   // AI Model APIs
-  getAIModels: () => api.get<{
-    diagnosis_llm: any;
-    mineru: any;
-    embedding: any;
-    oss: any;
-  }>('/admin/ai-models'),
-  testAIModel: (modelType: string, config?: any) => api.post<any>(`/admin/ai-models/${modelType}/test`, config || {}),
-  saveAIModelConfig: (modelType: string, config: any) => api.post<any>(`/admin/ai-models/${modelType}/config`, config),
+  getAIModels: () => api.get<AIModelConfigs>('/admin/ai-models'),
+  testAIModel: (modelType: string, config?: AIModelConfig) => api.post<unknown>(`/admin/ai-models/${modelType}/test`, config || {}),
+  saveAIModelConfig: (modelType: string, config: AIModelConfig) => api.post<unknown>(`/admin/ai-models/${modelType}/config`, config),
   getEmbeddingProviders: () => api.get<AIProvider[]>('/admin/embedding/providers'),
   validateEmbeddingUrl: (url: string) => api.post<{
     warnings: string[];

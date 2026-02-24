@@ -61,13 +61,16 @@ class PIICleanerService:
     # PII Detection Patterns / PII检测模式
     PII_PATTERNS = {
         PIIType.NAME: [
-            # Chinese patterns
+            # Chinese patterns with prefixes
             r'患者姓名[：:]\s*([\u4e00-\u9fa5]{2,4})',
             r'姓名[：:]\s*([\u4e00-\u9fa5]{2,4})',
             r'病人[：:]\s*([\u4e00-\u9fa5]{2,4})',
             r'患者[：:]\s*([\u4e00-\u9fa5]{2,4})',
             r'姓名：\s*([A-Za-z\s]{2,30})',  # English names
             r'Name[：:]\s*([A-Za-z\s]{2,30})',
+            # More flexible patterns for medical reports
+            r'姓名\s*[:：]\s*([\u4e00-\u9fa5]{2,4})',
+            r'[^\u4e00-\u9fa5]姓名\s*([\u4e00-\u9fa5]{2,4})(?:\s|$)',  # Standalone name after label
         ],
         PIIType.ID_NUMBER: [
             r'\b(\d{17}[\dXx])\b',  # Chinese ID
@@ -93,6 +96,8 @@ class PIICleanerService:
             r'医疗机构[：:]\s*([\u4e00-\u9fa5]+)',
             r'Hospital[：:]\s*([A-Za-z\s]+)',
             r'Clinic[：:]\s*([A-Za-z\s]+)',
+            # Medical institutions in reports
+            r'([\u4e00-\u9fa5]{2,8}(?:社区卫生服务中心|检验所|体检中心))',
         ],
         PIIType.DOCTOR_NAME: [
             r'主治医生[：:]\s*([\u4e00-\u9fa5]{2,4}(?:医生|大夫|医师)?)',
@@ -100,6 +105,7 @@ class PIICleanerService:
             r'医生[：:]\s*([\u4e00-\u9fa5]{2,4})',
             r'Attending[：:]\s*(Dr\.?\s*[A-Za-z\s]+)',
             r'Doctor[：:]\s*(Dr\.?\s*[A-Za-z\s]+)',
+            r'申请科室[：:]\s*([\u4e00-\u9fa5]{2,10}(?:科|室))[^\u4e00-\u9fa5]',  # Department with doctor
         ],
         PIIType.ADDRESS: [
             r'地址[：:]\s*([\u4e00-\u9fa5]{5,50})',
@@ -110,9 +116,10 @@ class PIICleanerService:
         ],
         PIIType.DATE_OF_BIRTH: [
             r'出生日期[：:]\s*(\d{4}[年/-]\d{1,2}[月/-]\d{1,2}[日]?)?',
-            r'生日[：:]\s*(\d{4}[年/-]\d{1,2}[月/-]\d{1,2}[日]?)?',
+            r'生日[：:]\s*(\d{4}[年/-]\d{1,2}[月/-]\d{1,2}[日]?)',
             r'DOB[：:]\s*(\d{4}[/-]\d{1,2}[/-]\d{1,2})',
             r'Birth[ Date]*[：:]\s*(\d{4}[/-]\d{1,2}[/-]\d{1,2})',
+            r'[^\d](\d{4}[年/-]\d{1,2}[月/-]\d{1,2}[日]?)(?=\s|$)',  # Standalone dates
         ],
         PIIType.MEDICAL_RECORD_NUMBER: [
             r'病历号[：:]\s*(\S+)',
@@ -121,6 +128,14 @@ class PIICleanerService:
             r'住院号[：:]\s*(\S+)',
             r'MRN[：:]\s*(\S+)',
             r'Medical Record[ Number]*[：:]\s*(\S+)',
+            # Additional medical identifiers
+            r'条码号[：:]\s*(\d+)',  # Barcode numbers
+            r'样本号[：:]\s*(\S+)',
+            r'样本编号[：:]\s*(\S+)',
+            r'超声号[：:]\s*(\S+)',
+            r'检查号[：:]\s*(\S+)',
+            r'体检号[：:]\s*(\S+)',
+            r'号[：:]\s*(\d{6,20})',  # Generic number patterns
         ],
     }
     
@@ -170,7 +185,9 @@ class PIICleanerService:
                         matched_text = match.group(1) if match.group(1) else matched_text
                     
                     # Skip if it's just a label without actual content
-                    if matched_text and len(matched_text) > 5:  # Arbitrary minimum length
+                    # For Chinese names, allow 2-4 characters; for other types, require minimum length
+                    min_length = 2 if pii_type == PIIType.NAME else (4 if pii_type == PIIType.MEDICAL_RECORD_NUMBER else 5)
+                    if matched_text and len(matched_text) >= min_length:
                         detection = PIIDetection(
                             pii_type=pii_type,
                             original=matched_text,
@@ -195,6 +212,56 @@ class PIICleanerService:
                     break
             if not overlaps:
                 filtered_detections.append(detection)
+        
+        # Post-processing: Additional cleaning for medical report formats
+        # Handle cases like "姓名：徐敬渝" where the pattern might not have matched
+        filtered_detections = self._post_process_medical_report(text, filtered_detections)
+        
+        return filtered_detections
+    
+    def _post_process_medical_report(self, text: str, detections: List[PIIDetection]) -> List[PIIDetection]:
+        """
+        Post-process medical reports to catch PII that might have been missed
+        Handles patterns like "姓名：xxx" where xxx is a Chinese name
+        """
+        # Find all already detected positions
+        detected_positions = set()
+        for det in detections:
+            for pos in range(det.position[0], det.position[1]):
+                detected_positions.add(pos)
+        
+        # Pattern for "姓名：xxx" or "xxx 性别：" formats (common in medical reports)
+        medical_patterns = [
+            (r'姓名[：:]\s*([\u4e00-\u9fa5]{2,4})', PIIType.NAME),
+            (r'(?:^|\n|[，。])\s*([\u4e00-\u9fa5]{2,4})\s*(?:男|女)\s*(?:性|[，。\n])', PIIType.NAME),  # Name followed by gender
+            (r'条码号[：:]\s*(\d{6,20})', PIIType.MEDICAL_RECORD_NUMBER),  # Barcode numbers
+            (r'样本号[：:]\s*(\S+)', PIIType.MEDICAL_RECORD_NUMBER),
+            (r'样本编号[：:]\s*(\S+)', PIIType.MEDICAL_RECORD_NUMBER),
+            (r'超声号[：:]\s*(\S+)', PIIType.MEDICAL_RECORD_NUMBER),
+        ]
+        
+        for pattern_str, pii_type in medical_patterns:
+            for match in re.finditer(pattern_str, text):
+                # Check if this position overlaps with existing detections
+                start, end = match.start(1), match.end(1)  # Use group 1 (the actual value)
+                overlaps = any(pos in detected_positions for pos in range(start, end))
+                
+                if not overlaps:
+                    detection = PIIDetection(
+                        pii_type=pii_type,
+                        original=match.group(1),
+                        replacement=self.REPLACEMENTS[pii_type],
+                        position=(start, end),
+                        confidence=0.85
+                    )
+                    detections.append(detection)
+                    # Mark positions as detected
+                    for pos in range(start, end):
+                        detected_positions.add(pos)
+        
+        # Re-sort by position
+        detections.sort(key=lambda x: x.position[0], reverse=True)
+        return detections
         
         return filtered_detections
     

@@ -82,22 +82,46 @@ const AdminMessages: React.FC = () => {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Fetch message detail
+  // Fetch message detail with retry logic
   const { data: messageDetail } = useQuery({
     queryKey: ['admin', 'message', selectedMessage?.id],
     queryFn: async () => {
       if (!selectedMessage) return null;
-      const response = await fetch(buildApiUrl(`admin/messages/${selectedMessage.id}`), {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem(CONFIG.TOKEN_KEY)}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch message detail');
+      
+      // Retry logic for handling transient 500 errors
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await fetch(buildApiUrl(`admin/messages/${selectedMessage.id}`), {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem(CONFIG.TOKEN_KEY)}`,
+            },
+          });
+          if (response.ok) {
+            return response.json();
+          }
+          // If it's a 500 error, retry
+          if (response.status === 500) {
+            lastError = new Error(`Server error (attempt ${attempt + 1}/3)`);
+            if (attempt < 2) {
+              // Wait before retrying (exponential backoff)
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+              continue;
+            }
+          }
+          throw new Error('Failed to fetch message detail');
+        } catch (error) {
+          lastError = error as Error;
+          if (attempt < 2) {
+            await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+          }
+        }
       }
-      return response.json();
+      throw lastError || new Error('Failed to fetch message detail after retries');
     },
     enabled: !!selectedMessage,
+    retry: 1, // React Query will also retry on error
+    retryDelay: 1000,
   });
 
   // Reply mutation

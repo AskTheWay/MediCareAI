@@ -508,71 +508,110 @@ async def get_admin_message_detail(
             detail="Only admins can access this endpoint",
         )
 
-    # First, get the message
-    stmt = (
-        select(InternalMessage)
-        .where(
-            and_(
-                InternalMessage.id == message_id,
-                InternalMessage.recipient_id == current_user.id,
+    try:
+        # First, get the message with a fresh session approach
+        stmt = (
+            select(InternalMessage)
+            .where(
+                and_(
+                    InternalMessage.id == message_id,
+                    InternalMessage.recipient_id == current_user.id,
+                )
             )
         )
-    )
-    result = await db.execute(stmt)
-    message = result.scalar_one_or_none()
+        result = await db.execute(stmt)
+        message = result.scalar_one_or_none()
 
-    if not message:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Message not found",
-        )
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found",
+            )
 
-    # Load sender separately to avoid greenlet_spawn issues
-    sender = None
-    if message.sender_id:
-        sender_stmt = select(User).where(User.id == message.sender_id)
-        sender_result = await db.execute(sender_stmt)
-        sender = sender_result.scalar_one_or_none()
+        # Extract data from message object immediately to avoid lazy loading issues
+        message_id_str = str(message.id)
+        message_subject = message.subject
+        message_content = message.content
+        message_is_read = message.is_read
+        message_sender_id = message.sender_id
+        message_created_at = message.created_at
+        message_updated_at = message.updated_at
+        message_read_at = message.read_at
 
-    # Load replies separately
-    replies_stmt = (
-        select(InternalMessage)
-        .where(InternalMessage.parent_id == message_id)
-        .order_by(InternalMessage.created_at)
-    )
-    replies_result = await db.execute(replies_stmt)
-    replies = replies_result.scalars().all()
+        # Load sender separately
+        sender = None
+        if message_sender_id:
+            sender_stmt = select(User).where(User.id == message_sender_id)
+            sender_result = await db.execute(sender_stmt)
+            sender = sender_result.scalar_one_or_none()
 
-    # Mark as read if not already
-    if not message.is_read:
-        message.is_read = True
-        message.read_at = datetime.utcnow()
-        await db.commit()
-
-    return {
-        "id": str(message.id),
-        "subject": message.subject,
-        "content": message.content,
-        "sender": {
+        # Extract sender data immediately
+        sender_data = {
             "id": str(sender.id) if sender else None,
             "full_name": sender.full_name if sender else "Unknown",
             "email": sender.email if sender else None,
             "role": sender.role if sender else None,
-        },
-        "is_read": message.is_read,
-        "read_at": message.read_at.isoformat() if message.read_at else None,
-        "replies": [
+        }
+
+        # Load replies separately
+        replies_stmt = (
+            select(InternalMessage)
+            .where(InternalMessage.parent_id == message_id)
+            .order_by(InternalMessage.created_at)
+        )
+        replies_result = await db.execute(replies_stmt)
+        replies = replies_result.scalars().all()
+
+        # Extract replies data immediately
+        replies_data = [
             {
                 "id": str(reply.id),
                 "subject": reply.subject,
                 "content": reply.content,
-                "created_at": reply.created_at.isoformat(),
+                "created_at": reply.created_at.isoformat() if reply.created_at else None,
             }
             for reply in replies
-        ],
-        "created_at": message.created_at.isoformat(),
-        "updated_at": message.updated_at.isoformat(),
-    }
+        ]
+
+        # Mark as read if not already (use a separate transaction)
+        if not message_is_read:
+            update_stmt = (
+                select(InternalMessage)
+                .where(
+                    and_(
+                        InternalMessage.id == message_id,
+                        InternalMessage.recipient_id == current_user.id,
+                    )
+                )
+            )
+            update_result = await db.execute(update_stmt)
+            msg_to_update = update_result.scalar_one_or_none()
+            if msg_to_update:
+                msg_to_update.is_read = True
+                msg_to_update.read_at = datetime.utcnow()
+                await db.commit()
+                message_is_read = True
+                message_read_at = msg_to_update.read_at
+
+        return {
+            "id": message_id_str,
+            "subject": message_subject,
+            "content": message_content,
+            "sender": sender_data,
+            "is_read": message_is_read,
+            "read_at": message_read_at.isoformat() if message_read_at else None,
+            "replies": replies_data,
+            "created_at": message_created_at.isoformat() if message_created_at else None,
+            "updated_at": message_updated_at.isoformat() if message_updated_at else None,
+        }
+    except Exception as e:
+        logger.error(f"Error fetching message detail: {str(e)}")
+        # Rollback any pending transaction
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch message: {str(e)}"
+        )
 
 
 @router.post("/admin/messages/{message_id}/reply", response_model=Dict[str, Any])

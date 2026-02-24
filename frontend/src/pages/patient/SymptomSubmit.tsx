@@ -114,17 +114,55 @@ const SymptomSubmit: React.FC = () => {
     }
   };
 
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB - MinerU API 限制
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
       const newFiles = Array.from(event.target.files);
-      setUploadedFiles([...uploadedFiles, ...newFiles]);
+      const validFiles: File[] = [];
+      const oversizedFiles: string[] = [];
+
+      newFiles.forEach(file => {
+        if (file.size > MAX_FILE_SIZE) {
+          oversizedFiles.push(file.name);
+        } else {
+          validFiles.push(file);
+        }
+      });
+
+      if (oversizedFiles.length > 0) {
+        setError(`以下文件超过 10MB 限制，无法上传：\n${oversizedFiles.join(', ')}\n\n请压缩图片或使用更小尺寸的文件。`);
+        setTimeout(() => setError(null), 8000);
+      }
+
+      if (validFiles.length > 0) {
+        setUploadedFiles([...uploadedFiles, ...validFiles]);
+      }
     }
   };
 
   const handleFileDrop = (event: React.DragEvent) => {
     event.preventDefault();
     const droppedFiles = Array.from(event.dataTransfer.files);
-    setUploadedFiles([...uploadedFiles, ...droppedFiles]);
+    const validFiles: File[] = [];
+    const oversizedFiles: string[] = [];
+
+    droppedFiles.forEach(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        oversizedFiles.push(file.name);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (oversizedFiles.length > 0) {
+      setError(`以下文件超过 10MB 限制，无法上传：\n${oversizedFiles.join(', ')}\n\n请压缩图片或使用更小尺寸的文件。`);
+      setTimeout(() => setError(null), 8000);
+    }
+
+    if (validFiles.length > 0) {
+      setUploadedFiles([...uploadedFiles, ...validFiles]);
+    }
   };
 
   const handleDragOver = (event: React.DragEvent) => {
@@ -177,23 +215,52 @@ const SymptomSubmit: React.FC = () => {
         try {
           await documentsApi.extract(document.id);
 
+          // 轮询等待提取完成
+          // 注意：文档提取可能需要 2-5 分钟（AI 识别 + PII 脱敏处理）
           let attempts = 0;
-          const maxAttempts = 30;
+          const maxAttempts = 180; // 最多等待 6 分钟 (180 × 2秒)
+          const pollInterval = 2000; // 每 2 秒检查一次
+
           while (attempts < maxAttempts) {
             const doc = await documentsApi.getDocument(document.id);
             if (doc.extracted_content || doc.cleaned_content) {
               setStreamingStatus(`文件提取完成: ${file.name}`);
               break;
             }
-            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // 如果状态是 failed，获取详细错误信息
+            if (doc.upload_status === 'failed') {
+              try {
+                const contentInfo = await documentsApi.getDocumentContent(document.id);
+                const errorDetail = contentInfo.error || contentInfo.message || '未知错误';
+                console.warn(`文件提取失败: ${file.name}, 原因: ${errorDetail}`);
+                setStreamingStatus(`文件 ${file.name} 提取失败: ${errorDetail}`);
+              } catch (err) {
+                console.warn(`文件提取失败: ${file.name}`);
+                setStreamingStatus(`文件 ${file.name} 提取失败，请检查配置`);
+              }
+              break;
+            }
+
+            // 更新进度提示（每 15 秒更新一次提示）
+            const elapsedSeconds = (attempts + 1) * (pollInterval / 1000);
+            if (attempts % 7 === 0) { // 约每 14 秒更新一次
+              setStreamingStatus(`正在提取文件内容: ${file.name} (${elapsedSeconds}秒)...\nAI 识别和隐私保护处理可能需要几分钟，请耐心等待`);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
             attempts++;
           }
 
           if (attempts >= maxAttempts) {
-            console.warn(`文件提取超时: ${file.name}`);
+            // 超时但继续处理，不阻塞用户
+            console.warn(`文件提取时间较长: ${file.name}，后台仍在处理中`);
+            setStreamingStatus(`文件 ${file.name} 正在后台处理中，您可先提交症状`);
           }
         } catch (err) {
           console.error('文档提取失败:', file.name, err);
+          // 提取失败不阻塞，继续处理其他文件
+          setStreamingStatus(`文件 ${file.name} 提取遇到问题，继续处理...`);
         }
       } catch (err) {
         console.error('上传文件失败:', file.name, err);
@@ -499,7 +566,7 @@ const SymptomSubmit: React.FC = () => {
                 点击或拖拽文件到此处
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                支持 PDF、图片、Word 文档
+                支持 PDF、图片、Word 文档（单个文件不超过 10MB）
               </Typography>
             </Paper>
 

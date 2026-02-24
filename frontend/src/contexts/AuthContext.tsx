@@ -59,7 +59,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         admin: '/admin',
       };
       window.location.href = roleRoutes[response.user.role] || '/';
-    } catch (err: any) {
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '登录失败');
       setError(err.message || '登录失败');
       throw err;
     }
@@ -84,7 +85,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         admin: '/admin',
       };
       window.location.href = roleRoutes[response.user.role] || '/';
-    } catch (err: any) {
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '注册失败');
       setError(err.message || '注册失败');
       throw err;
     }

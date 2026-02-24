@@ -417,6 +417,19 @@ export interface AdminAlert {
   timestamp: string;
 }
 
+// System metrics API response - supports both nested and direct formats
+export interface SystemMetricsResponse {
+  current?: SystemMetrics;
+  cpu?: { percent: number };
+  memory?: { percent: number };
+  disk?: { percent: number };
+  timestamp?: string;
+  alert_level?: 'info' | 'warning' | 'critical';
+  cpu_percent?: number;
+  memory_percent?: number;
+  disk_percent?: number;
+}
+
 export interface AdminOperationLog {
   id: string;
   admin_id: string;
@@ -496,4 +509,46 @@ export interface FollowUp {
   next_follow_up_date?: string;
   created_at: string;
   updated_at: string;
+}
+
+// API Error Response
+export interface ApiErrorResponse {
+  detail?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+// Backend request data for registration
+export interface BackendRegisterData {
+  email: string;
+  password: string;
+  full_name: string;
+  role: string;
+  phone?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  title?: string;
+  department?: string;
+  hospital?: string;
+  license_number?: string;
+  specialty?: string;
+  address?: string;
+}
+
+// AI Model Configuration
+export interface AIModelConfig {
+  model_name?: string;
+  api_base?: string;
+  api_key?: string;
+  temperature?: number;
+  max_tokens?: number;
+  timeout?: number;
+  [key: string]: unknown;
+}
+
+export interface AIModelConfigs {
+  diagnosis_llm: AIModelConfig;
+  mineru: AIModelConfig;
+  embedding: AIModelConfig;
+  oss: AIModelConfig;
 }

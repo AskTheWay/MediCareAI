@@ -514,6 +514,27 @@ Before submitting changes:
 
 ---
 
+## 最近变更 Recent Changes | v3.0.1 (2026-02-24)
+
+### 🔒 安全修复 Security Fixes
+- **移除硬编码加密密钥**: 所有加密密钥现在必须通过 `API_KEY_MASTER_KEY` 环境变量配置
+- **安全硬化**: `dynamic_config_service.py`, `ai_model_config_service.py`, `security.py` 不再包含默认密钥
+
+### 🐛 核心修复 Core Fixes
+- **路由修复**: 知识库路由双重前缀问题
+- **数据库异步**: 修复 Admin Messages SQLAlchemy MissingGreenlet 错误
+- **文件上传**: 超时从 60 秒延长到 6 分钟，添加 10MB 限制检查
+- **病例分享**: 修复 @提及医生不显示问题（SharedMedicalCase 唯一约束冲突）
+- **PII 清洗**: 改进中文姓名检测，支持医疗报告特定模式（条码号、样本号等）
+
+### 🛠️ 代码质量 Code Quality
+- **删除重复组件**: 移除 PlatformSelect.tsx 和 doctor/Register.tsx
+- **类型安全**: 修复 8 处 `any` 类型，添加严格 TypeScript 配置
+- **错误边界**: 添加 React Error Boundary 全局错误处理
+- **新增类型**: SystemMetricsResponse, ApiErrorResponse, BackendRegisterData, AIModelConfig
+
+---
+
 ## 资源 Resources
 
 - **FastAPI 文档 Docs**: https://fastapi.tiangolo.com/

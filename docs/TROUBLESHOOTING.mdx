@@ -119,7 +119,44 @@ docker-compose logs postgres
 # 等待健康检查通过后重启后端
 docker-compose restart backend
 ```
+---
 
+### 问题 5: API_KEY_MASTER_KEY 环境变量错误
+
+**现象 | Symptoms**:
+```
+ValueError: API_KEY_MASTER_KEY environment variable is required
+```
+或后端启动时提示加密密钥错误。
+
+**原因 | Cause**:
+从 v2.1.2 版本开始，系统移除了硬编码的加密密钥，必须通过环境变量 `API_KEY_MASTER_KEY` 配置。
+
+**解决方案 | Solution**:
+
+1. 生成安全的随机密钥:
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+2. 编辑 `.env` 文件，添加生成的密钥:
+```bash
+API_KEY_MASTER_KEY=your_generated_key_here
+```
+
+3. 重新部署后端服务:
+```bash
+docker-compose stop backend
+docker-compose rm backend
+docker-compose up -d backend
+```
+
+**警告 | Warning**:
+- 一旦设置 `API_KEY_MASTER_KEY`，请勿更改！
+- 更改此密钥会导致数据库中已加密的 API 密钥无法解密
+- 请在首次部署前妥善保存此密钥
+
+---
 ---
 
 ## 📝 维护任务 Maintenance Tasks

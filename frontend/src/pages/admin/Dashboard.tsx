@@ -47,7 +47,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
 import { CONFIG } from '../../lib/config';
 import { useAuthStore } from '../../store/authStore';
-import { SystemMetrics } from '../../types';
+import { SystemMetrics, SystemMetricsResponse } from '../../types';
 
 interface AdminAlert {
   level: 'info' | 'warning' | 'danger';
@@ -103,7 +103,7 @@ const Dashboard: React.FC = () => {
       try {
         const response = await adminApi.getSystemMetrics();
         console.log('System metrics received:', response);
-        const currentMetrics = (response as any).current || response;
+        const currentMetrics = (response as SystemMetricsResponse).current || response;
         if (currentMetrics && currentMetrics.cpu && typeof currentMetrics.cpu.percent === 'number') {
           systemMetrics = {
             cpu_percent: currentMetrics.cpu.percent,

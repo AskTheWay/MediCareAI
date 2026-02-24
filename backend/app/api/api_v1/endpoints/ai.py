@@ -174,18 +174,33 @@ async def share_case_with_doctor(
     anonymized_symptoms = await clean_medical_content_v2(medical_case.symptoms)
     anonymized_diagnosis = await clean_medical_content_v2(medical_case.diagnosis)
 
-    # 创建新的私有共享病例记录（专门用于@提及）
-    shared_case = SharedMedicalCase(
-        original_case_id=medical_case.id,
-        consent_id=consent.id,
-        anonymous_patient_profile=anonymous_profile,
-        anonymized_symptoms=anonymized_symptoms,
-        anonymized_diagnosis=anonymized_diagnosis,
-        visible_to_doctors=False,
-        visible_for_research=False,
+    # 检查是否已存在该病例的共享记录（可能已由公开分享创建）
+    existing_shared_result = await db.execute(
+        select(SharedMedicalCase).where(
+            SharedMedicalCase.original_case_id == medical_case.id
+        )
     )
-    db.add(shared_case)
-    await db.flush()
+    existing_shared = existing_shared_result.scalar_one_or_none()
+    
+    if existing_shared:
+        # 如果已存在公开分享记录，复用它（更新为也支持@提及）
+        shared_case = existing_shared
+        logger.info(f"复用已存在的共享病例记录: {shared_case.id}, 原病例: {medical_case.id}")
+    else:
+        # 创建新的私有共享病例记录（专门用于@提及）
+        shared_case = SharedMedicalCase(
+            original_case_id=medical_case.id,
+            consent_id=consent.id,
+            anonymous_patient_profile=anonymous_profile,
+            anonymized_symptoms=anonymized_symptoms,
+            anonymized_diagnosis=anonymized_diagnosis,
+            visible_to_doctors=False,
+            visible_for_research=False,
+        )
+        db.add(shared_case)
+        await db.flush()
+        logger.info(f"创建新的私有共享病例记录: {shared_case.id}, 原病例: {medical_case.id}")
+
 
     existing_relation_result = await db.execute(
         select(DoctorPatientRelation).where(
@@ -199,29 +214,61 @@ async def share_case_with_doctor(
 
     existing_relation = existing_relation_result.scalar_one_or_none()
 
-    if not existing_relation:
-        # 创建新的关系
-        relation = DoctorPatientRelation(
-            patient_id=patient.id,
-            doctor_id=doctor_id,
-            status="pending",
-            initiated_by="patient_at",
-            patient_message=f"患者在症状提交时@提及您，病例:{medical_case.title or '未命名病例'}",
-            share_all_cases=False,
-            shared_case_ids=[str(shared_case.id)],
-        )
-        db.add(relation)
-    else:
-        # 更新现有关系，添加新的共享病例ID
-        case_id_str = str(shared_case.id)
-        if existing_relation.shared_case_ids is None:
-            existing_relation.shared_case_ids = []
-        if case_id_str not in existing_relation.shared_case_ids:
-            existing_relation.shared_case_ids.append(case_id_str)
+    try:
+        if not existing_relation:
+            # 创建新的关系
+            shared_case_id_str = str(shared_case.id)
+            relation = DoctorPatientRelation(
+                patient_id=patient.id,
+                doctor_id=doctor_id,
+                status="pending",
+                initiated_by="patient_at",
+                patient_message=f"患者在症状提交时@提及您，病例:{medical_case.title or '未命名病例'}",
+                share_all_cases=False,
+                shared_case_ids=[shared_case_id_str],  # 明确使用字符串ID
+            )
+            db.add(relation)
+            logger.info(f"创建新的医生-患者关系: patient={patient.id}, doctor={doctor_id}, shared_case_ids={[shared_case_id_str]}")
+        else:
+            # 更新现有关系，添加新的共享病例ID
+            case_id_str = str(shared_case.id)
+            current_ids = existing_relation.shared_case_ids
+            
+            # 处理 None 或空值情况
+            if current_ids is None:
+                current_ids = []
+            
+            # 转换为列表（处理可能的 JSONB 返回类型）
+            current_ids_list = list(current_ids) if current_ids else []
+            
+            if case_id_str not in current_ids_list:
+                # 创建新列表并赋值，确保 SQLAlchemy 检测到变更
+                new_ids = current_ids_list + [case_id_str]
+                existing_relation.shared_case_ids = new_ids
+                logger.info(f"更新医生-患者关系，添加新病例: patient={patient.id}, doctor={doctor_id}, case={shared_case.id}, total_cases={len(new_ids)}, new_list={new_ids}")
+            else:
+                logger.info(f"病例已存在于关系中，跳过: patient={patient.id}, doctor={doctor_id}, case={shared_case.id}, existing_list={current_ids_list}")
 
-    await db.commit()
+        await db.commit()
+        
+        # Refresh to ensure data is persisted and verify
+        if not existing_relation:
+            await db.refresh(relation)
+            # 验证数据是否正确保存
+            verify_ids = relation.shared_case_ids or []
+            logger.info(f"验证新关系数据: relation_id={relation.id}, shared_case_ids={verify_ids}")
+        else:
+            await db.refresh(existing_relation)
+            # 验证数据是否正确保存
+            verify_ids = existing_relation.shared_case_ids or []
+            logger.info(f"验证更新关系数据: relation_id={existing_relation.id}, shared_case_ids={verify_ids}")
+            
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"分享病例给医生失败: patient={patient.id}, doctor={doctor_id}, error={str(e)}, type={type(e).__name__}")
+        raise
 
-    logger.info(f"病例已分享给医生: doctor_id={doctor_id}, case_id={medical_case.id}")
+    logger.info(f"病例已分享给医生: doctor_id={doctor_id}, case_id={medical_case.id}, shared_case_id={shared_case.id}")
     return shared_case
 
 
@@ -799,6 +846,15 @@ async def comprehensive_diagnosis_stream(
                 "⚠️ Using fallback AI configuration from environment for streaming"
             )
 
+        # 【关键】在进入流式生成器之前，先验证 doctor_ids
+        doctors_to_share_pre = []
+        if request.doctor_ids:
+            doctors_to_share_pre.extend(request.doctor_ids)
+        if request.doctor_id:
+            doctors_to_share_pre.append(request.doctor_id)
+        doctors_to_share_pre = list(set(doctors_to_share_pre))
+        logger.info(f"【关键前置】流式诊断前保存的医生列表: {doctors_to_share_pre}, 数量: {len(doctors_to_share_pre)}")
+
         # 6. 调用流式诊断流程（包含慢性病信息）
         async def generate_stream():
             """生成流式输出"""
@@ -855,24 +911,36 @@ async def comprehensive_diagnosis_stream(
 
                         # 2. 如果用户@提及了特定医生，无论是否勾选共享，都要分享给这些医生（私有共享）
                         doctors_to_share = []
+                        logger.info(f"准备处理@提及医生，request.doctor_ids={request.doctor_ids}, request.doctor_id={request.doctor_id}")
                         if request.doctor_ids:
                             doctors_to_share.extend(request.doctor_ids)
+                            logger.info(f"添加了doctor_ids: {request.doctor_ids}")
                         if request.doctor_id:
                             doctors_to_share.append(request.doctor_id)
+                            logger.info(f"添加了doctor_id: {request.doctor_id}")
 
                         # 去重
                         doctors_to_share = list(set(doctors_to_share))
+                        logger.info(f"最终需要分享的医生列表: {doctors_to_share}, 数量: {len(doctors_to_share)}")
 
-                        for doctor_id in doctors_to_share:
+                        logger.info(f"【关键】即将开始分享流程，医生数量: {len(doctors_to_share)}, 当前db会话状态: {db}")
+                        for idx, doctor_id in enumerate(doctors_to_share):
                             try:
-                                await share_case_with_doctor(
+                                logger.info(f"【关键】开始第 {idx+1}/{len(doctors_to_share)} 个医生的分享: doctor_id={doctor_id}, case_id={medical_case.id}")
+                                result = await share_case_with_doctor(
                                     db, medical_case, current_user, doctor_id
                                 )
-                                logger.info(f"病例已@分享给指定医生: {doctor_id}")
+                                logger.info(f"【关键】第 {idx+1} 个医生分享成功: doctor_id={doctor_id}, shared_case_id={result.id if result else 'None'}")
+                                # 强制刷新数据库会话以确保数据写入
+                                await db.flush()
+                                logger.info(f"【关键】数据库flush完成 for doctor_id={doctor_id}")
                             except Exception as share_error:
                                 logger.error(
-                                    f"@分享给医生 {doctor_id} 失败: {str(share_error)}"
+                                    f"【关键错误】@分享给医生 {doctor_id} 失败: {str(share_error)}, type={type(share_error).__name__}",
+                                    exc_info=True
                                 )
+                                # 不要因为单个医生分享失败而中断整个流程
+                                continue
                     else:
                         logger.warning(
                             f"未找到指定的病历ID: {request.case_id}，将创建新病历"
@@ -931,48 +999,66 @@ async def comprehensive_diagnosis_stream(
 
                     # 2. 如果用户@提及了特定医生，无论是否勾选共享，都要分享给这些医生（私有共享）
                     doctors_to_share = []
+                    logger.info(f"准备处理@提及医生（新病例），request.doctor_ids={request.doctor_ids}, request.doctor_id={request.doctor_id}")
                     if request.doctor_ids:
                         doctors_to_share.extend(request.doctor_ids)
+                        logger.info(f"添加了doctor_ids: {request.doctor_ids}")
                     if request.doctor_id:
                         doctors_to_share.append(request.doctor_id)
+                        logger.info(f"添加了doctor_id: {request.doctor_id}")
 
                     # 去重
                     doctors_to_share = list(set(doctors_to_share))
+                    logger.info(f"最终需要分享的医生列表: {doctors_to_share}, 数量: {len(doctors_to_share)}")
 
                     for doctor_id in doctors_to_share:
                         try:
-                            await share_case_with_doctor(
+                            logger.info(f"开始分享病例给医生: {doctor_id}, case_id={medical_case.id}")
+                            result = await share_case_with_doctor(
                                 db, medical_case, current_user, doctor_id
                             )
-                            logger.info(f"病例已@分享给指定医生: {doctor_id}")
+                            logger.info(f"病例已@分享给指定医生成功: doctor_id={doctor_id}, shared_case_id={result.id if result else 'None'}")
                         except Exception as share_error:
                             logger.error(
-                                f"@分享给医生 {doctor_id} 失败: {str(share_error)}"
+                                f"@分享给医生 {doctor_id} 失败: {str(share_error)}, type={type(share_error).__name__}",
+                                exc_info=True
                             )
 
                 # 发送完成信息
+                # 获取当前使用的模型ID（优先从ai_service获取，如果失败则使用配置）
+                current_model_id = ai_service.model_id or settings.ai_model_id or "未知模型"
+                # 更准确的token估算：中文字符约占2个token，加上系统提示的固定开销
+                estimated_tokens = len(full_diagnosis) * 2 + 500
+                
                 completion_data = {
                     "done": True,
                     "case_id": str(medical_case.id),
                     "saved_to_records": True,
                     "status": "completed",
-                    "model_used": ai_service.model_id,  # 使用实际配置的模型ID
-                    "tokens_used": len(full_diagnosis) * 2,  # 估算token用量
+                    "model_used": current_model_id,
+                    "model_id": current_model_id,  # 同时提供两种字段名以兼容前端
+                    "tokens_used": estimated_tokens,
                     "created_at": medical_case.created_at.isoformat()
                     if medical_case.created_at
                     else datetime.utcnow().isoformat(),
                     "knowledge_base_sources": kb_sources,
                     "knowledge_base_selection_reasoning": kb_selection_reasoning,
                 }
+                logger.info(f"流式诊断完成: case_id={medical_case.id}, model={current_model_id}, tokens={estimated_tokens}")
                 yield f"data: {json.dumps(completion_data)}\n\n"
             except Exception as save_error:
                 logger.error(f"保存病历记录失败: {str(save_error)}")
                 # 保存失败不影响诊断结果返回，只是记录日志
+                # 即使在错误情况下也返回模型信息
+                error_model_id = ai_service.model_id or settings.ai_model_id or "未知模型"
                 completion_data = {
                     "done": True,
                     "case_id": f"case-{current_user.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
                     "saved_to_records": False,
                     "save_error": str(save_error),
+                    "model_used": error_model_id,
+                    "model_id": error_model_id,
+                    "tokens_used": len(full_diagnosis) * 2 + 500 if full_diagnosis else 0,
                     "knowledge_base_sources": kb_sources,
                     "knowledge_base_selection_reasoning": kb_selection_reasoning,
                 }

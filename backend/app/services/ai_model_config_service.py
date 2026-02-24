@@ -18,8 +18,9 @@ from app.models.ai_model_config import AIModelConfiguration
 
 logger = logging.getLogger(__name__)
 
-# Default master key for this project
-DEFAULT_MASTER_KEY = "zhanxiaopi"
+# Master key must be provided via environment variable
+# DO NOT use hardcoded keys in production!
+# Set API_KEY_MASTER_KEY environment variable with a secure random key
 
 def derive_fernet_key(master_key: str) -> bytes:
     """Derive a valid Fernet key from a string | 从字符串派生有效的Fernet密钥"""
@@ -40,18 +41,18 @@ class AIModelConfigService:
     
     def _get_cipher(self) -> Fernet:
         """Get or create encryption cipher | 获取或创建加密器"""
-        key_str = os.getenv("API_KEY_MASTER_KEY") or DEFAULT_MASTER_KEY
-        if not os.getenv("API_KEY_MASTER_KEY"):
-            logger.info("Using default API_KEY_MASTER_KEY for MediCare_AI")
+        key_str = os.getenv("API_KEY_MASTER_KEY")
+        if not key_str:
+            logger.error("API_KEY_MASTER_KEY environment variable is not set!")
+            raise ValueError("API_KEY_MASTER_KEY environment variable is required for secure operation")
         
         try:
             # Derive proper Fernet key from string
             key = derive_fernet_key(key_str)
             return Fernet(key)
         except Exception as e:
-            # If key derivation fails, use default
-            logger.error(f"Invalid API_KEY_MASTER_KEY: {e}, using default key")
-            return Fernet(derive_fernet_key(DEFAULT_MASTER_KEY))
+            logger.error(f"Invalid API_KEY_MASTER_KEY: {e}")
+            raise ValueError(f"Invalid API_KEY_MASTER_KEY: {e}")
     
     def _encrypt_key(self, api_key: str) -> str:
         """Encrypt API key | 加密API密钥"""

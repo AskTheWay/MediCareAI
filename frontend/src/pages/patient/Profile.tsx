@@ -44,7 +44,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../hooks/useAuth';
 import { patientsApi, chronicDiseasesApi } from '../../services/api';
-import type { Patient, PatientChronicCondition, ChronicDisease } from '../../types';
+import type { Patient, PatientChronicCondition, ChronicDisease, PatientCreate } from '../../types';
 
 const Profile: React.FC = () => {
   const { user, logout } = useAuth();
@@ -169,7 +169,7 @@ const Profile: React.FC = () => {
       // Update patient information
       const emergencyContact = `${emergencyContactName} ${emergencyContactPhone}`.trim();
       
-      const patientData = {
+      const patientData: PatientCreate = {
         date_of_birth: dateOfBirth || undefined,
         gender: gender || undefined,
         phone: phone || undefined,
@@ -183,7 +183,7 @@ const Profile: React.FC = () => {
       } catch (updateError) {
         // If patient record doesn't exist, try to create
         if (updateError instanceof Error && updateError.message.includes('404')) {
-          await patientsApi.create(patientData as any);
+          await patientsApi.create(patientData);
         } else {
           throw updateError;
         }

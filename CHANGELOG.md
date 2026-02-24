@@ -11,6 +11,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.1] - 2026-02-24
+
+### 安全修复 Security Fixes | 🔒
+
+#### API 密钥安全硬化 (API Key Security Hardening)
+- **移除所有硬编码加密密钥** Removed all hardcoded encryption keys
+  - 从 `dynamic_config_service.py`、`ai_model_config_service.py`、`security.py` 移除 `DEFAULT_MASTER_KEY = "zhanxiaopi"`
+  - 加密密钥现在必须通过环境变量 `API_KEY_MASTER_KEY` 配置
+  - 添加环境变量未设置时的错误提示和文档
+
+### 核心 Bug 修复 Core Bug Fixes | 🐛
+
+#### 路由修复 (Route Fixes)
+- **修复知识库路由双重前缀** Fixed knowledge base route double prefix
+  - 移除 `api.py` 中重复的路由前缀 `/knowledge`
+  - 修复后端端点路径为 `/api/v1/knowledge/documents`
+
+#### 数据库异步修复 (Database Async Fixes)
+- **修复 Admin Messages 500 错误** Fixed admin messages 500 error
+  - 修复 SQLAlchemy `MissingGreenlet` 异步懒加载错误
+  - 分离事务处理，添加 `try-except` 和回滚机制
+  - 前端添加重试逻辑和指数退避
+
+#### 文件处理修复 (File Processing Fixes)
+- **修复文件上传超时** Fixed file upload timeout
+  - 前端轮询从 60 秒延长到 6 分钟（180 次 × 2 秒）
+  - 添加 10MB 文件大小限制检查
+  - 改进错误提示，显示详细失败原因
+
+#### 病例分享修复 (Case Sharing Fixes)
+- **修复 @提及医生不显示问题** Fixed @mention doctor not showing
+  - 修复 `SharedMedicalCase` 唯一约束冲突导致的事务回滚
+  - 添加复用已存在共享记录的逻辑
+  - 改进 `DoctorPatientRelation` 的 `shared_case_ids` 更新
+
+- **修复 AI 诊断模型信息显示** Fixed AI diagnosis model info display
+  - 后端返回 `model_id` 和 `model_used` 字段
+  - 改进 Token 消耗估算（`len * 2 + 500`）
+
+#### PII 清洗修复 (PII Cleaning Fixes)
+- **修复隐私信息泄露** Fixed privacy information leakage
+  - 修复 PII 清洗服务无法检测 2-4 字符中文姓名的问题
+  - 调整最小长度检查（姓名从 5 改为 2）
+  - 添加医疗报告特定模式（条码号、样本号、超声号等）
+  - 添加 `_post_process_medical_report` 后处理方法
+
+### 代码质量改进 Code Quality Improvements | 🛠️
+
+#### 前端类型安全 (Frontend Type Safety)
+- **删除重复组件** Removed duplicate components
+  - 删除 `frontend/src/pages/PlatformSelect.tsx`
+  - 删除 `frontend/src/pages/doctor/Register.tsx`
+
+- **修复 TypeScript `any` 类型** Fixed TypeScript `any` types (8 处)
+  - `admin/Dashboard.tsx`: `(response as any)` → `SystemMetricsResponse`
+  - `patient/Profile.tsx`: `patientData: any` → `PatientCreate`
+  - `contexts/AuthContext.tsx`: `catch (err: any)` → `catch (err: unknown)`
+  - `services/api.ts`: API 错误响应和模型配置类型
+
+- **新增类型定义** Added new type definitions
+  - `SystemMetricsResponse`: 系统指标 API 响应类型
+  - `ApiErrorResponse`: API 错误响应类型
+  - `BackendRegisterData`: 注册请求数据类型
+  - `AIModelConfig`/`AIModelConfigs`: AI 模型配置类型
+
+- **增强类型检查配置** Enhanced type checking config
+  - 更新 `tsconfig.json` 添加严格模式选项
+  - `noImplicitAny`, `strictNullChecks`, `strictFunctionTypes` 等
+
+#### 错误处理改进 (Error Handling Improvements)
+- **添加 React Error Boundaries** Added React Error Boundaries
+  - 创建 `ErrorBoundary.tsx` 全局错误边界组件
+  - 捕获应用错误防止白屏崩溃
+  - 显示用户友好的中文错误提示和重试按钮
+  - 集成到 App.tsx 包裹所有路由
+
+### 修复的文件 Fixed Files
+- `backend/app/utils/security.py` - 移除硬编码密钥
+- `backend/app/services/dynamic_config_service.py` - 移除硬编码密钥
+- `backend/app/services/ai_model_config_service.py` - 移除硬编码密钥
+- `backend/app/api/api_v1/api.py` - 修复路由前缀
+- `backend/app/api/api_v1/endpoints/messages.py` - 修复异步数据库问题
+- `backend/app/api/api_v1/endpoints/ai.py` - 修复分享逻辑和模型信息
+- `backend/app/services/pii_cleaner_service.py` - 改进 PII 检测
+- `frontend/src/pages/patient/SymptomSubmit.tsx` - 修复超时和错误提示
+- `frontend/src/services/api.ts` - 类型安全改进
+- `frontend/src/contexts/AuthContext.tsx` - 错误处理类型
+- `frontend/src/components/common/ErrorBoundary.tsx` - 新增错误边界
+- `.env.example` - 添加 `API_KEY_MASTER_KEY` 文档
+
+---
+
 ## [3.0.0] - 2026-02-23
 
 ### 主要更新 Highlights | Major Updates

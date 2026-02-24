@@ -36,9 +36,8 @@ api_router.include_router(documents.router, prefix="/documents", tags=["document
 api_router.include_router(ai.router, prefix="/ai", tags=["ai-diagnostics"])
 
 # 知识库管理路由
-api_router.include_router(
-    knowledge_router, prefix="/knowledge", tags=["knowledge-bases"]
-)
+# Note: knowledge_router already has prefix="/api/v1/knowledge" in its definition
+api_router.include_router(knowledge_router, tags=["knowledge-bases"])
 
 # 向量嵌入管理路由 (Admin only)
 api_router.include_router(
