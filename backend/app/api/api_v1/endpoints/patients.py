@@ -1,11 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from typing import List
+from uuid import UUID
 from app.db.database import get_db
-from app.schemas.patient import PatientCreate, PatientUpdate, PatientResponse, PatientSummary
+from app.schemas.patient import (
+    PatientCreate,
+    PatientUpdate,
+    PatientResponse,
+    PatientSummary,
+)
 from app.services.patient_service import PatientService
 from app.core.deps import get_current_active_user
-from app.models.models import User
+from app.models.models import User, PatientChronicCondition, ChronicDisease
+from app.schemas.chronic_disease import (
+    ChronicDiseaseResponse,
+    PatientChronicConditionCreate,
+    PatientChronicConditionUpdate,
+    PatientChronicConditionResponse,
+    PatientChronicConditionListResponse,
+)
 import uuid
 
 router = APIRouter()
@@ -26,7 +41,7 @@ def _enrich_patient_response(patient, user: User) -> dict:
         "medical_record_number": patient.medical_record_number,
         "notes": patient.notes,
         "created_at": patient.created_at,
-        "updated_at": patient.updated_at
+        "updated_at": patient.updated_at,
     }
     return patient_dict
 
@@ -34,15 +49,16 @@ def _enrich_patient_response(patient, user: User) -> dict:
 @router.get("/me", response_model=PatientResponse)
 async def get_my_patient(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
     """获取当前用户的患者信息（主档案）"""
     patient_service = PatientService(db)
-    patients = await patient_service.get_patients_by_user(current_user.id, skip=0, limit=1)
+    patients = await patient_service.get_patients_by_user(
+        current_user.id, skip=0, limit=1
+    )
     if not patients:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient profile not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient profile not found"
         )
     return _enrich_patient_response(patients[0], current_user)
 
@@ -51,17 +67,20 @@ async def get_my_patient(
 async def update_my_patient(
     patient_data: PatientUpdate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
     """更新当前用户的患者信息（主档案）"""
     patient_service = PatientService(db)
-    patients = await patient_service.get_patients_by_user(current_user.id, skip=0, limit=1)
+    patients = await patient_service.get_patients_by_user(
+        current_user.id, skip=0, limit=1
+    )
     if not patients:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient profile not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient profile not found"
         )
-    patient = await patient_service.update_patient(patients[0].id, patient_data, current_user.id)
+    patient = await patient_service.update_patient(
+        patients[0].id, patient_data, current_user.id
+    )
     return _enrich_patient_response(patient, current_user)
 
 
@@ -70,7 +89,7 @@ async def get_patients(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     patient_service = PatientService(db)
     patients = await patient_service.get_patients_by_user(current_user.id, skip, limit)
@@ -81,7 +100,7 @@ async def get_patients(
 @router.get("/count")
 async def get_patients_count(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     patient_service = PatientService(db)
     count = await patient_service.count_patients_by_user(current_user.id)
@@ -92,7 +111,7 @@ async def get_patients_count(
 async def create_patient(
     patient_data: PatientCreate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
     patient_service = PatientService(db)
     patient = await patient_service.create_patient(patient_data, current_user.id)
@@ -103,14 +122,13 @@ async def create_patient(
 async def get_patient(
     patient_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
     patient_service = PatientService(db)
     patient = await patient_service.get_patient_by_id(patient_id, current_user.id)
     if not patient:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
         )
     return _enrich_patient_response(patient, current_user)
 
@@ -120,10 +138,12 @@ async def update_patient(
     patient_id: uuid.UUID,
     patient_data: PatientUpdate,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
     patient_service = PatientService(db)
-    patient = await patient_service.update_patient(patient_id, patient_data, current_user.id)
+    patient = await patient_service.update_patient(
+        patient_id, patient_data, current_user.id
+    )
     return _enrich_patient_response(patient, current_user)
 
 
@@ -131,8 +151,251 @@ async def update_patient(
 async def delete_patient(
     patient_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     patient_service = PatientService(db)
     await patient_service.delete_patient(patient_id, current_user.id)
     return {"message": "Patient deleted successfully"}
+
+
+@router.get("/me/chronic-diseases", response_model=PatientChronicConditionListResponse)
+async def get_my_chronic_diseases(
+    include_inactive: bool = Query(False, description="Include inactive conditions"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get current patient's chronic and special diseases.
+    Used in patient profile and AI diagnosis context.
+    """
+    query = (
+        select(PatientChronicCondition)
+        .where(PatientChronicCondition.patient_id == current_user.id)
+        .options(selectinload(PatientChronicCondition.chronic_disease))
+    )
+
+    if not include_inactive:
+        query = query.where(PatientChronicCondition.is_active == True)
+
+    query = query.order_by(PatientChronicCondition.created_at.desc())
+
+    result = await db.execute(query)
+    conditions = result.scalars().all()
+
+    # Build response with disease data included
+    response_items = []
+    for condition in conditions:
+        disease_data = None
+        if condition.chronic_disease:
+            disease_data = ChronicDiseaseResponse(
+                id=condition.chronic_disease.id,
+                icd10_code=condition.chronic_disease.icd10_code,
+                icd10_name=condition.chronic_disease.icd10_name,
+                disease_type=condition.chronic_disease.disease_type,
+                common_names=condition.chronic_disease.common_names,
+                category=condition.chronic_disease.category,
+                description=condition.chronic_disease.description,
+                medical_notes=condition.chronic_disease.medical_notes,
+                is_active=condition.chronic_disease.is_active,
+                created_at=condition.chronic_disease.created_at,
+                updated_at=condition.chronic_disease.updated_at,
+            )
+
+        response_items.append(
+            PatientChronicConditionResponse(
+                id=condition.id,
+                patient_id=condition.patient_id,
+                disease_id=condition.disease_id,
+                diagnosis_date=condition.diagnosis_date,
+                severity=condition.severity,
+                notes=condition.notes,
+                is_active=condition.is_active,
+                created_at=condition.created_at,
+                updated_at=condition.updated_at,
+                disease=disease_data,
+            )
+        )
+
+    return PatientChronicConditionListResponse(
+        items=response_items, total=len(response_items)
+    )
+
+
+@router.post(
+    "/me/chronic-diseases",
+    response_model=PatientChronicConditionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_my_chronic_disease(
+    condition_data: PatientChronicConditionCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a chronic/special disease to current patient's profile."""
+    # Check if disease exists
+    disease_result = await db.execute(
+        select(ChronicDisease).where(
+            and_(
+                ChronicDisease.id == condition_data.disease_id,
+                ChronicDisease.is_active == True,
+            )
+        )
+    )
+    disease = disease_result.scalar_one_or_none()
+
+    if not disease:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Disease not found"
+        )
+
+    # Check if patient already has this disease (active only)
+    existing_result = await db.execute(
+        select(PatientChronicCondition).where(
+            and_(
+                PatientChronicCondition.patient_id == current_user.id,
+                PatientChronicCondition.disease_id == condition_data.disease_id,
+                PatientChronicCondition.is_active == True,
+            )
+        )
+    )
+    if existing_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Patient already has this disease in their profile",
+        )
+
+    # Check if there's an inactive record for this disease (reactivate it)
+    inactive_result = await db.execute(
+        select(PatientChronicCondition).where(
+            and_(
+                PatientChronicCondition.patient_id == current_user.id,
+                PatientChronicCondition.disease_id == condition_data.disease_id,
+                PatientChronicCondition.is_active == False,
+            )
+        )
+    )
+    inactive_condition = inactive_result.scalar_one_or_none()
+
+    if inactive_condition:
+        # Reactivate the existing record
+        inactive_condition.is_active = True
+        inactive_condition.diagnosis_date = condition_data.diagnosis_date
+        inactive_condition.severity = condition_data.severity
+        inactive_condition.notes = condition_data.notes
+        await db.commit()
+        await db.refresh(inactive_condition)
+
+        return PatientChronicConditionResponse(
+            id=inactive_condition.id,
+            patient_id=inactive_condition.patient_id,
+            disease_id=inactive_condition.disease_id,
+            diagnosis_date=inactive_condition.diagnosis_date,
+            severity=inactive_condition.severity,
+            notes=inactive_condition.notes,
+            is_active=inactive_condition.is_active,
+            created_at=inactive_condition.created_at,
+            updated_at=inactive_condition.updated_at,
+        )
+
+    # Create new condition
+    new_condition = PatientChronicCondition(
+        patient_id=current_user.id,
+        disease_id=condition_data.disease_id,
+        diagnosis_date=condition_data.diagnosis_date,
+        severity=condition_data.severity,
+        notes=condition_data.notes,
+        is_active=True,
+    )
+
+    db.add(new_condition)
+    await db.commit()
+    await db.refresh(new_condition)
+
+    return PatientChronicConditionResponse(
+        id=new_condition.id,
+        patient_id=new_condition.patient_id,
+        disease_id=new_condition.disease_id,
+        diagnosis_date=new_condition.diagnosis_date,
+        severity=new_condition.severity,
+        notes=new_condition.notes,
+        is_active=new_condition.is_active,
+        created_at=new_condition.created_at,
+        updated_at=new_condition.updated_at,
+    )
+
+
+@router.put(
+    "/me/chronic-diseases/{condition_id}",
+    response_model=PatientChronicConditionResponse,
+)
+async def update_my_chronic_disease(
+    condition_id: UUID,
+    condition_data: PatientChronicConditionUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update patient's chronic disease information."""
+    result = await db.execute(
+        select(PatientChronicCondition).where(
+            and_(
+                PatientChronicCondition.id == condition_id,
+                PatientChronicCondition.patient_id == current_user.id,
+            )
+        )
+    )
+    condition = result.scalar_one_or_none()
+
+    if not condition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chronic disease condition not found",
+        )
+
+    # Update fields
+    for field, value in condition_data.model_dump(exclude_unset=True).items():
+        setattr(condition, field, value)
+
+    await db.commit()
+    await db.refresh(condition)
+
+    return PatientChronicConditionResponse(
+        id=condition.id,
+        patient_id=condition.patient_id,
+        disease_id=condition.disease_id,
+        diagnosis_date=condition.diagnosis_date,
+        severity=condition.severity,
+        notes=condition.notes,
+        is_active=condition.is_active,
+        created_at=condition.created_at,
+        updated_at=condition.updated_at,
+    )
+
+
+@router.delete("/me/chronic-diseases/{condition_id}")
+async def delete_my_chronic_disease(
+    condition_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete (deactivate) patient's chronic disease."""
+    result = await db.execute(
+        select(PatientChronicCondition).where(
+            and_(
+                PatientChronicCondition.id == condition_id,
+                PatientChronicCondition.patient_id == current_user.id,
+            )
+        )
+    )
+    condition = result.scalar_one_or_none()
+
+    if not condition:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chronic disease condition not found",
+        )
+
+    # Soft delete - just mark as inactive
+    condition.is_active = False
+    await db.commit()
+
+    return {"message": "Chronic disease removed from profile"}

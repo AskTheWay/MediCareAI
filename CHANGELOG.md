@@ -11,6 +11,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.0] - 2026-02-23
+
+### 主要更新 Highlights | Major Updates
+
+#### 🐛 Dashboard 统计与病例列表修复 (Dashboard Statistics & Case List Fixes)
+- **修复 Dashboard 统计数字显示为0的问题** Fixed Dashboard stats showing 0
+  - 后端 `get_doctor_accessible_cases` 函数中 UUID 类型不匹配导致查询失败
+  - 将 JSON 字符串 ID 转换为 UUID 对象进行数据库查询
+  - 修复两处：Dashboard 统计端点和病例查询函数
+
+- **修复 "最近@我的病例" 列表不显示的问题** Fixed "Recent @My Cases" list not showing
+  - 前端 `initialData: []` 导致 React Query 不发起 API 请求
+  - 改为使用 `refetchOnMount: true` 强制刷新数据
+  - 修复 `api.get()` 返回数据后又调用 `.data` 导致 undefined 的问题
+
+#### 📝 患者回复医生评论修复 (Patient Reply to Doctor Comment Fix)
+- **修复患者回复不显示的问题** Fixed patient reply not showing
+  - 前端 `submitReply` 函数中 API 调用被注释掉
+  - 恢复 `casesApi.replyToDoctorComment` 调用
+  - 修复后患者回复会正确保存并显示在双方界面
+
+#### 📄 AI 诊断结果展示优化 (AI Diagnosis Display Optimization)
+- **移除 AI 诊断结果的滚动限制** Removed scroll limit for AI diagnosis results
+  - 移除 `maxHeight: '600px'` 和 `overflow: 'auto'` 样式
+  - AI 诊断结果现在完整展示，不再截断显示
+
+#### 📤 PDF 导出功能实现 (PDF Export Implementation)
+- **实现患者端 PDF 导出功能** Implemented patient-side PDF export
+  - 集成 `html2canvas` + `jspdf` 实现 PDF 生成
+  - 修复 AI 诊断内容过长被截断的问题
+  - 使用 `onclone` 回调移除滚动限制后捕获完整内容
+
+#### 🔗 病例分享逻辑修复 (Case Sharing Logic Fixes)
+- **修复公开病例分享 bug** Fixed public case sharing bug
+  - `sharing.py` 中 `visible_to_doctors` 逻辑错误（ platform 分享应为 True）
+  - 修正后勾选"允许将本次诊断信息共享给医生端"的病例正确显示
+
+- **修复字段名不匹配问题** Fixed field name mismatch
+  - 后端 `ai.py` 使用 `share_with_doctor`，前端发送 `share_with_doctors`
+  - 统一字段名为 `share_with_doctors`（复数形式）
+
+#### 🖥️ 医生端文档预览修复 (Doctor-side Document Preview Fix)
+- **实现 Markdown 文档渲染** Implemented Markdown document rendering
+  - 集成 `react-markdown` + `rehype-raw` 支持 HTML
+  - 医生端文档预览从原始 Markdown 改为渲染后的内容
+
+### 修复 Fixed
+- Dashboard @我的病例统计显示为0
+- Dashboard 可访问公开病例统计显示为0
+- 最近@我的病例列表为空
+- 患者回复医生评论不显示
+- AI 诊断结果在滑块框中截断显示
+- PDF 导出功能缺失（显示"开发中"）
+- 公开病例分享后医生端看不到
+- 医生端文档预览显示原始 Markdown
+
+### 新增功能 Added
+- 患者端 PDF 导出功能（使用 html2canvas + jspdf）
+- 医生端 Markdown 文档渲染（使用 react-markdown + rehype-raw）
+- "科研导出"菜单项添加到医生端侧边栏
+
+### 变更 Changed
+- `backend/app/api/api_v1/endpoints/doctor.py`: 添加 UUID 转换逻辑
+- `backend/app/api/api_v1/endpoints/ai.py`: 修复字段名 `share_with_doctors`
+- `backend/app/api/api_v1/endpoints/sharing.py`: 修复 `visible_to_doctors` 逻辑
+- `frontend/src/pages/doctor/Dashboard.tsx`: 修复数据获取逻辑
+- `frontend/src/pages/patient/MedicalRecords.tsx`: 实现 PDF 导出，移除滚动限制
+- `frontend/src/pages/doctor/CaseDetail.tsx`: 添加 Markdown 渲染
+- `frontend/src/pages/doctor/DoctorLayout.tsx`: 添加"科研导出"导航项
+
+---
+
 ## [2.1.0] - 2026-02-19
 
 ### 主要更新 Highlights | Major Updates

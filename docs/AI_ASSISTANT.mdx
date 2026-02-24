@@ -109,40 +109,71 @@
 
 ### 2. 前端 (Frontend) | Frontend
 
-**类型 Type**: Static HTML/CSS/JavaScript (Vanilla, no build step)
-**样式 Styling**: Inline CSS with component-based styles
+**技术栈 Tech Stack**: React 18 + TypeScript + Vite + Material-UI v6
+**状态管理 State Management**: Zustand
+**数据获取 Data Fetching**: React Query v5 (TanStack Query)
+**路由 Routing**: React Router v6
+**构建工具 Build Tool**: Vite
+**UI 组件库 UI Library**: Material-UI (MUI) v6
+
 **三端 Three Platforms**:
 
-#### 患者端 Patient Platform:
-- `index.html` - 首页 / Homepage
-- `login.html` / `register.html` - 认证 / Authentication
-- `symptom-submit.html` - AI 诊断提交 / AI diagnosis submission
-- `medical-records.html` - 诊疗记录 / Diagnosis history
-- `user-profile.html` - 个人中心 / User profile
+#### 患者端 Patient Platform (`src/pages/patient/`):
+- `Dashboard.tsx` - 患者仪表板 / Patient dashboard
+- `SymptomSubmit.tsx` - AI 诊断提交 / AI diagnosis submission
+- `MedicalRecords.tsx` - 诊疗记录列表 / Medical records list
+- `MedicalRecordDetail.tsx` - 病例详情 / Case detail
+- `Profile.tsx` - 个人中心 / User profile
 
-#### 医生端 Doctor Platform:
-- `doctor-dashboard.html` - 医生仪表板 / Doctor dashboard
-- `doctor-mentions.html` - @我的病例 / @My cases
-- `doctor-case-detail.html` - 病例详情 / Case detail
-- `doctor-profile.html` - 医生档案 / Doctor profile
+#### 医生端 Doctor Platform (`src/pages/doctor/`):
+- `Dashboard.tsx` - 医生仪表板 / Doctor dashboard
+- `Cases.tsx` - 病例管理 / Case management
+- `CaseDetail.tsx` - 病例详情 / Case detail
+- `Mentions.tsx` - @我的病例 /@My cases
+- `Messages.tsx` - 消息中心 / Messages
+- `Profile.tsx` - 医生档案 / Doctor profile
 
-#### 管理员端 Admin Platform:
-- `admin-dashboard.html` - 管理仪表板 / Admin dashboard
-- `admin-doctors.html` - 医生认证 / Doctor verification
-- `admin-knowledge-base.html` - 知识库管理 / Knowledge base management
-- `admin-ai-models.html` - AI 模型配置 / AI model configuration
-- `admin-logs.html` - 审计日志 / Audit logs
+#### 管理员端 Admin Platform (`src/pages/admin/`):
+- `Dashboard.tsx` - 管理仪表板 / Admin dashboard
+- `Doctors.tsx` - 医生认证 / Doctor verification
+- `KnowledgeBase.tsx` - 知识库管理 / Knowledge base management
+- `AIModels.tsx` - AI 模型配置 / AI model configuration
+- `Logs.tsx` - 审计日志 / Audit logs
+- `Messages.tsx` - 消息管理 / Message management
+
+#### 前端架构 | Frontend Architecture:
+```
+frontend/
+├── src/
+│   ├── components/          # 共享组件 / Shared components
+│   │   ├── layout/         # 布局组件 / Layout components
+│   │   │   ├── PatientLayout.tsx
+│   │   │   ├── DoctorLayout.tsx
+│   │   │   └── AdminLayout.tsx
+│   │   └── ProtectedRoute.tsx
+│   ├── pages/              # 页面组件 / Page components
+│   │   ├── auth/          # 认证页面 / Auth pages
+│   │   ├── patient/       # 患者端 / Patient platform
+│   │   ├── doctor/        # 医生端 / Doctor platform
+│   │   └── admin/         # 管理员端 / Admin platform
+│   ├── services/          # API 服务 / API services
+│   │   └── api.ts         # Axios 客户端 / Axios client
+│   ├── store/             # 状态管理 / State management
+│   │   └── authStore.ts   # Zustand auth store
+│   ├── hooks/             # 自定义 Hooks / Custom hooks
+│   ├── types/             # TypeScript 类型 / TypeScript types
+│   └── lib/               # 工具函数 / Utilities
+├── package.json           # Node 依赖 / Node dependencies
+├── tsconfig.json          # TypeScript 配置
+└── vite.config.ts         # Vite 配置
+```
 
 #### 前端模式 | Frontend Patterns:
-- API 调用使用 fetch()，JWT 在 Authorization header 中
-- 令牌存储在 localStorage
-- 提交前进行表单验证
-- 基于 Modal 的确认对话框
-
-- API calls use `fetch()` with JWT in Authorization header
-- Token storage in `localStorage`
-- Form validation before submission
-- Modal-based confirmation dialogs
+- **API 调用**: 使用 axios，JWT 存储在 Zustand store 中 / API calls use axios with JWT in Zustand store
+- **状态管理**: Zustand 用于全局状态，React Query 用于服务端状态 / Zustand for global state, React Query for server state
+- **表单处理**: React Hook Form 进行表单验证 / React Hook Form for validation
+- **UI 组件**: Material-UI v6 组件库 / Material-UI v6 component library
+- **构建输出**: `npm run build` → `build/` 目录 / Build output to `build/` directory
 
 ### 3. 数据库模型 | Database Models
 
@@ -256,9 +287,13 @@ knowledge_bases/
    - 在 `app/services/` 添加服务逻辑
 
 3. **前端 Frontend**:
-   - 在 `/frontend/` 创建/修改 HTML 页面
-   - 添加 API 集成和错误处理
-   - 如需更新导航
+   - 在 `/frontend/src/pages/` 创建/修改 React 组件 (.tsx)
+   - 在 `/frontend/src/components/` 添加共享组件
+   - 使用 Material-UI v6 组件构建 UI
+   - 在 `App.tsx` 或路由配置中添加路由
+   - 使用 Zustand 添加状态管理（如需要）
+   - 运行 `npm run dev` 启动开发服务器测试
+   - 使用 `npm run build` 构建生产版本
 
 4. **测试 Testing**:
    - 使用 curl 或 Postman 测试 API

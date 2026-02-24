@@ -2,6 +2,7 @@
 """
 初始化数据库表
 """
+
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -11,12 +12,28 @@ from app.core.config import settings
 # Import all models to register them with Base.metadata
 # 导入所有模型以确保 SQLAlchemy 能正确创建所有表
 from app.models.models import (
-    User, Disease, MedicalCase, MedicalDocument, AIFeedback,
-    FollowUp, UserSession, AuditLog, DataSharingConsent,
-    SharedMedicalCase, DoctorPatientRelation, KnowledgeBaseChunk,
-    VectorEmbeddingConfig, SystemResourceLog, DoctorCaseComment,
-    CaseCommentReply, CaseKnowledgeMatch, AIDiagnosisLog,
-    AdminOperationLog, DoctorVerification, Patient
+    User,
+    Disease,
+    MedicalCase,
+    MedicalDocument,
+    AIFeedback,
+    FollowUp,
+    UserSession,
+    AuditLog,
+    DataSharingConsent,
+    SharedMedicalCase,
+    DoctorPatientRelation,
+    KnowledgeBaseChunk,
+    VectorEmbeddingConfig,
+    SystemResourceLog,
+    DoctorCaseComment,
+    CaseCommentReply,
+    CaseKnowledgeMatch,
+    AIDiagnosisLog,
+    AdminOperationLog,
+    DoctorVerification,
+    InternalMessage,
+    Patient,
 )
 from app.models.ai_model_config import AIModelConfiguration
 

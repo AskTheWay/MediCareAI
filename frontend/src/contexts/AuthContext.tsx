@@ -1,174 +1,138 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { User, UserLogin, UserCreate } from '../types';
-import apiService from '../services/api';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { authApi } from '../services/api';
+import { CONFIG } from '../lib/config';
+import type { User, LoginCredentials, RegisterData } from '../types';
 
-interface AuthState {
+interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-}
-
-interface AuthContextType extends AuthState {
-  login: (credentials: UserLogin) => Promise<void>;
-  register: (userData: UserCreate) => Promise<void>;
+  login: (credentials: LoginCredentials) => Promise<void>;
+  register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-type AuthAction =
-  | { type: 'LOGIN_START' }
-  | { type: 'LOGIN_SUCCESS'; payload: User }
-  | { type: 'LOGIN_FAILURE'; payload: string }
-  | { type: 'LOGOUT' }
-  | { type: 'CLEAR_ERROR' };
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-const authReducer = (state: AuthState, action: AuthAction): AuthState => {
-  switch (action.type) {
-    case 'LOGIN_START':
-      return {
-        ...state,
-        isLoading: true,
-        error: null,
-      };
-    case 'LOGIN_SUCCESS':
-      return {
-        ...state,
-        user: action.payload,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null,
-      };
-    case 'LOGIN_FAILURE':
-      return {
-        ...state,
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: action.payload,
-      };
-    case 'LOGOUT':
-      return {
-        ...state,
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: null,
-      };
-    case 'CLEAR_ERROR':
-      return {
-        ...state,
-        error: null,
-      };
-    default:
-      return state;
-  }
-};
-
-const initialState: AuthState = {
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
-  error: null,
-};
-
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [state, dispatch] = useReducer(authReducer, initialState);
+  const clearError = () => setError(null);
 
   useEffect(() => {
-    // 检查本地存储中的令牌和用户信息
-    const token = localStorage.getItem('access_token');
-    const userStr = localStorage.getItem('user');
-    
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        dispatch({ type: 'LOGIN_SUCCESS', payload: user });
-      } catch (error) {
-        // 如果解析失败，清除本地存储
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        dispatch({ type: 'LOGOUT' });
+    const initAuth = async () => {
+      const token = localStorage.getItem(CONFIG.TOKEN_KEY);
+      if (token) {
+        try {
+          const userData = await authApi.me();
+          setUser(userData);
+        } catch {
+          localStorage.removeItem(CONFIG.TOKEN_KEY);
+          localStorage.removeItem(CONFIG.REFRESH_TOKEN_KEY);
+        }
       }
-    } else {
-      dispatch({ type: 'LOGOUT' });
-    }
+      setIsLoading(false);
+    };
+    initAuth();
   }, []);
 
-  const login = async (credentials: UserLogin): Promise<void> => {
+  const login = async (credentials: LoginCredentials) => {
     try {
-      dispatch({ type: 'LOGIN_START' });
+      setError(null);
+      const response = await authApi.login(credentials);
       
-      const tokenResponse = await apiService.login(credentials);
-      const userResponse = await apiService.getCurrentUser();
+      if (!response || !response.tokens || !response.user) {
+        throw new Error('登录响应格式错误');
+      }
       
-      // 保存令牌和用户信息到本地存储
-      localStorage.setItem('access_token', tokenResponse.access_token);
-      localStorage.setItem('refresh_token', tokenResponse.refresh_token);
-      localStorage.setItem('user', JSON.stringify(userResponse));
+      localStorage.setItem(CONFIG.TOKEN_KEY, response.tokens.access_token);
+      localStorage.setItem(CONFIG.REFRESH_TOKEN_KEY, response.tokens.refresh_token);
+      setUser(response.user);
       
-      dispatch({ type: 'LOGIN_SUCCESS', payload: userResponse });
-    } catch (error: any) {
-      dispatch({ type: 'LOGIN_FAILURE', payload: error.detail || 'Login failed' });
-      throw error;
+      const roleRoutes: { [key: string]: string } = {
+        patient: '/patient',
+        doctor: '/doctor',
+        admin: '/admin',
+      };
+      window.location.href = roleRoutes[response.user.role] || '/';
+    } catch (err: any) {
+      setError(err.message || '登录失败');
+      throw err;
     }
   };
 
-  const register = async (userData: UserCreate): Promise<void> => {
+  const register = async (data: RegisterData) => {
     try {
-      dispatch({ type: 'LOGIN_START' });
+      setError(null);
+      const response = await authApi.register(data);
       
-      const user = await apiService.register(userData);
+      if (!response || !response.tokens || !response.user) {
+        throw new Error('注册响应格式错误：服务器返回数据不完整');
+      }
       
-      dispatch({ type: 'LOGIN_SUCCESS', payload: user });
-    } catch (error: any) {
-      dispatch({ type: 'LOGIN_FAILURE', payload: error.detail || 'Registration failed' });
-      throw error;
+      localStorage.setItem(CONFIG.TOKEN_KEY, response.tokens.access_token);
+      localStorage.setItem(CONFIG.REFRESH_TOKEN_KEY, response.tokens.refresh_token);
+      setUser(response.user);
+      
+      const roleRoutes: { [key: string]: string } = {
+        patient: '/patient',
+        doctor: '/doctor',
+        admin: '/admin',
+      };
+      window.location.href = roleRoutes[response.user.role] || '/';
+    } catch (err: any) {
+      setError(err.message || '注册失败');
+      throw err;
     }
   };
 
-  const logout = async (): Promise<void> => {
-    try {
-      await apiService.logout();
-    } catch (error) {
-      // 即使登出API调用失败，也要清除本地存储
-      console.error('Logout API error:', error);
-    } finally {
-      // 清除本地存储
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user');
-      
-      dispatch({ type: 'LOGOUT' });
+  const logout = () => {
+    const currentUser = user;
+    authApi.logout().catch(() => {});
+    localStorage.removeItem(CONFIG.TOKEN_KEY);
+    localStorage.removeItem(CONFIG.REFRESH_TOKEN_KEY);
+    setUser(null);
+    
+    if (currentUser?.role === 'admin') {
+      window.location.href = '/admin-login';
+    } else if (currentUser?.role === 'doctor') {
+      window.location.href = '/doctor-login';
+    } else {
+      window.location.href = '/login';
     }
   };
 
-  const clearError = (): void => {
-    dispatch({ type: 'CLEAR_ERROR' });
-  };
-
-  const value: AuthContextType = {
-    ...state,
-    login,
-    register,
-    logout,
-    clearError,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        error,
+        login,
+        register,
+        logout,
+        clearError,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
-export const useAuth = (): AuthContextType => {
+export const useAuthContext = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) {
+    throw new Error('useAuthContext must be used within an AuthProvider');
   }
   return context;
 };
+
+// Alias for backward compatibility
+export const useAuth = useAuthContext;
+
+export { AuthContext };

@@ -17,6 +17,10 @@ echo "PostgreSQL is up!"
 echo "Initializing database tables..."
 python /app/init_db.py
 
+echo "Running database migrations..."
+python /app/migrations/add_license_document_columns.py
+python /app/migrations/add_internal_messages_table.py
+
 echo "Initializing admin account..."
 python /app/init_admin.py
 

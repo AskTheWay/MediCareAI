@@ -405,7 +405,7 @@ async def share_medical_case(
             anonymized_symptoms=anonymized_symptoms,
             anonymized_diagnosis=anonymized_diagnosis,
             anonymized_documents=anonymized_documents,
-            visible_to_doctors=request_data.target_type == "specific_doctor",
+            visible_to_doctors=request_data.target_type == "platform",
             visible_for_research=request_data.target_type == "platform"
         )
         db.add(shared_case)
@@ -448,7 +448,7 @@ async def share_medical_case(
                     anonymized_symptoms=related_symptoms,
                     anonymized_diagnosis=related_diagnosis,
                     anonymized_documents=related_documents,
-                    visible_to_doctors=request_data.target_type == "specific_doctor",
+                    visible_to_doctors=request_data.target_type == "platform",
                     visible_for_research=request_data.target_type == "platform"
                 )
                 db.add(related_shared_case)

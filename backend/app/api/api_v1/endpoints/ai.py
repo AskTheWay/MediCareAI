@@ -1,6 +1,7 @@
 """
 AI 诊断 API 端点 - 完整工作流集成
 """
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +11,13 @@ import json
 import uuid
 from app.db.database import get_db
 from app.core.deps import get_current_active_user
-from app.models.models import User, MedicalDocument, PatientChronicCondition, ChronicDisease
+from app.models.models import (
+    User,
+    MedicalDocument,
+    PatientChronicCondition,
+    ChronicDisease,
+    MedicalCase,
+)
 from app.services.ai_service import ai_service
 from app.services.patient_service import PatientService
 from app.services.medical_case_service import MedicalCaseService
@@ -25,6 +32,7 @@ router = APIRouter()
 
 class ComprehensiveDiagnosisRequest(BaseModel):
     """完整诊断请求"""
+
     symptoms: str
     severity: str = "moderate"
     duration: Optional[str] = None
@@ -35,14 +43,15 @@ class ComprehensiveDiagnosisRequest(BaseModel):
     document_ids: Optional[List[uuid.UUID]] = []
     disease_category: str = "respiratory"
     language: str = "zh"
-    case_id: Optional[uuid.UUID] = None
-    share_with_doctor: bool = False
+    case_id: Optional[uuid.UUID] = None  # 用于更新现有病历，避免重复创建
+    share_with_doctors: bool = False
     doctor_id: Optional[uuid.UUID] = None  # 保留单医生字段用于向后兼容
     doctor_ids: Optional[List[uuid.UUID]] = []  # 支持同时@多个医生
 
 
 class SymptomAnalysisRequest(BaseModel):
     """症状分析请求（向后兼容）"""
+
     symptoms: str
     severity: str = "moderate"
     duration: Optional[str] = None
@@ -51,6 +60,7 @@ class SymptomAnalysisRequest(BaseModel):
 
 class DocumentExtractionRequest(BaseModel):
     """文档提取请求"""
+
     file_url: str
     extraction_type: str = "medical_report"
 
@@ -63,28 +73,28 @@ async def create_shared_case(db: AsyncSession, medical_case, patient: User):
     from app.models.models import SharedMedicalCase, DataSharingConsent
     from datetime import datetime
     from sqlalchemy import select
-    
+
     stmt = select(SharedMedicalCase).where(
         SharedMedicalCase.original_case_id == medical_case.id
     )
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
-    
+
     if existing:
         existing.visible_to_doctors = True
         existing.anonymized_symptoms = medical_case.symptoms
-        existing.anonymized_diagnosis = medical_case.diagnosis or 'AI诊断结果'
+        existing.anonymized_diagnosis = medical_case.diagnosis or "AI诊断结果"
         await db.commit()
         logger.info(f"更新共享病例: {existing.id}")
         return existing
 
     consent = DataSharingConsent(
         patient_id=patient.id,
-        share_type='platform_anonymous',
-        consent_version='1.0',
-        consent_text='患者同意将匿名化后的诊断信息共享给认证医生用于医疗咨询和学术研究。',
-        ip_address='127.0.0.1',  # TODO: Get actual client IP from request
-        is_active=True
+        share_type="platform_anonymous",
+        consent_version="1.0",
+        consent_text="患者同意将匿名化后的诊断信息共享给认证医生用于医疗咨询和学术研究。",
+        ip_address="127.0.0.1",  # TODO: Get actual client IP from request
+        is_active=True,
     )
     db.add(consent)
     await db.flush()
@@ -95,57 +105,63 @@ async def create_shared_case(db: AsyncSession, medical_case, patient: User):
         visible_to_doctors=True,
         visible_for_research=True,
         anonymized_symptoms=medical_case.symptoms,
-        anonymized_diagnosis=medical_case.diagnosis or 'AI诊断结果',
+        anonymized_diagnosis=medical_case.diagnosis or "AI诊断结果",
         anonymous_patient_profile={
-            'age_range': '30-40岁' if patient.date_of_birth else '未知',
-            'gender': patient.gender or '未知',
-            'city_tier': '一线城市'
+            "age_range": "30-40岁" if patient.date_of_birth else "未知",
+            "gender": patient.gender or "未知",
+            "city_tier": "一线城市",
         },
-        view_count=0
+        view_count=0,
     )
     db.add(shared_case)
     await db.commit()
     await db.refresh(shared_case)
-    
+
     logger.info(f"创建共享病例成功: {shared_case.id}, 原病例: {medical_case.id}")
     return shared_case
 
 
-async def share_case_with_doctor(db: AsyncSession, medical_case, patient: User, doctor_id: uuid.UUID):
+async def share_case_with_doctor(
+    db: AsyncSession, medical_case, patient: User, doctor_id: uuid.UUID
+):
     """
     将病例分享给特定医生
     Share case with specific doctor
     """
-    from app.models.models import SharedMedicalCase, DataSharingConsent, DoctorPatientRelation
+    from app.models.models import (
+        SharedMedicalCase,
+        DataSharingConsent,
+        DoctorPatientRelation,
+    )
     from app.services.pii_cleaner_service import PIICleanerService
     from datetime import datetime, timedelta
     from sqlalchemy import select, and_
-    
+
     pii_cleaner = PIICleanerService()
-    
+
     # 为@提及医生创建独立的私有共享病例记录
     # 无论是否存在公开共享记录，都创建新的私有记录
     valid_until = datetime.utcnow() + timedelta(days=365)
-    
+
     consent = DataSharingConsent(
         patient_id=patient.id,
-        share_type='to_specific_doctor',
+        share_type="to_specific_doctor",
         target_doctor_id=doctor_id,
-        consent_version='1.0',
-        consent_text='患者同意将诊断信息共享给指定的医生，分享内容将自动脱敏处理。',
+        consent_version="1.0",
+        consent_text="患者同意将诊断信息共享给指定的医生，分享内容将自动脱敏处理。",
         valid_until=valid_until,
-        ip_address='127.0.0.1'
+        ip_address="127.0.0.1",
     )
     db.add(consent)
     await db.flush()
-    
+
     def create_anonymous_profile_v2(patient_user: User):
-        if patient_user.role != 'patient':
+        if patient_user.role != "patient":
             return {}
         return patient_user.generate_anonymous_profile()
-    
+
     anonymous_profile = create_anonymous_profile_v2(patient)
-    
+
     async def clean_medical_content_v2(content):
         if not content:
             return None
@@ -154,7 +170,7 @@ async def share_case_with_doctor(db: AsyncSession, medical_case, patient: User, 
             return result["cleaned_text"]
         except Exception:
             return content
-    
+
     anonymized_symptoms = await clean_medical_content_v2(medical_case.symptoms)
     anonymized_diagnosis = await clean_medical_content_v2(medical_case.diagnosis)
 
@@ -166,23 +182,23 @@ async def share_case_with_doctor(db: AsyncSession, medical_case, patient: User, 
         anonymized_symptoms=anonymized_symptoms,
         anonymized_diagnosis=anonymized_diagnosis,
         visible_to_doctors=False,
-        visible_for_research=False
+        visible_for_research=False,
     )
     db.add(shared_case)
     await db.flush()
-    
+
     existing_relation_result = await db.execute(
         select(DoctorPatientRelation).where(
             and_(
                 DoctorPatientRelation.patient_id == patient.id,
                 DoctorPatientRelation.doctor_id == doctor_id,
-                DoctorPatientRelation.status.in_(['pending', 'active'])
+                DoctorPatientRelation.status.in_(["pending", "active"]),
             )
         )
     )
-    
+
     existing_relation = existing_relation_result.scalar_one_or_none()
-    
+
     if not existing_relation:
         # 创建新的关系
         relation = DoctorPatientRelation(
@@ -192,7 +208,7 @@ async def share_case_with_doctor(db: AsyncSession, medical_case, patient: User, 
             initiated_by="patient_at",
             patient_message=f"患者在症状提交时@提及您，病例:{medical_case.title or '未命名病例'}",
             share_all_cases=False,
-            shared_case_ids=[str(shared_case.id)]
+            shared_case_ids=[str(shared_case.id)],
         )
         db.add(relation)
     else:
@@ -202,9 +218,9 @@ async def share_case_with_doctor(db: AsyncSession, medical_case, patient: User, 
             existing_relation.shared_case_ids = []
         if case_id_str not in existing_relation.shared_case_ids:
             existing_relation.shared_case_ids.append(case_id_str)
-    
+
     await db.commit()
-    
+
     logger.info(f"病例已分享给医生: doctor_id={doctor_id}, case_id={medical_case.id}")
     return shared_case
 
@@ -212,21 +228,20 @@ async def share_case_with_doctor(db: AsyncSession, medical_case, patient: User, 
 @router.post("/diagnose")
 async def diagnose_symptoms(
     request: SymptomAnalysisRequest,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     AI 症状诊断（简化版，向后兼容）
     """
     try:
         result = await ai_service.analyze_symptoms(
-            symptoms=request.symptoms,
-            patient_info=request.patient_info
+            symptoms=request.symptoms, patient_info=request.patient_info
         )
 
         if "error" in result and result["error"]:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result["error"]
+                detail=result["error"],
             )
 
         return {
@@ -235,7 +250,7 @@ async def diagnose_symptoms(
             "model_used": result.get("model_used", ""),
             "tokens_used": result.get("tokens_used", 0),
             "severity": request.severity,
-            "status": "completed"
+            "status": "completed",
         }
 
     except HTTPException:
@@ -243,7 +258,7 @@ async def diagnose_symptoms(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"诊断失败: {str(e)}"
+            detail=f"诊断失败: {str(e)}",
         )
 
 
@@ -252,13 +267,13 @@ async def comprehensive_diagnosis(
     request: ComprehensiveDiagnosisRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-    http_request: Request = None
+    http_request: Request = None,
 ):
     """
     完整诊断工作流
-    
+
     整合：个人信息 + 诊疗提交信息(MinerU提取) + 知识库信息 -> AI诊断
-    
+
     工作流程：
     1. 获取患者个人信息
     2. 提取上传文件的文本内容（MinerU）
@@ -269,46 +284,56 @@ async def comprehensive_diagnosis(
     try:
         # 1. 获取患者个人信息
         patient_service = PatientService(db)
-        patients = await patient_service.get_patients_by_user(current_user.id, skip=0, limit=1)
-        
+        patients = await patient_service.get_patients_by_user(
+            current_user.id, skip=0, limit=1
+        )
+
         patient_info = {
             "full_name": current_user.full_name,
-            "email": current_user.email
+            "email": current_user.email,
         }
-        
+
         if patients:
             patient = patients[0]
-            patient_info.update({
-                "gender": patient.gender,
-                "date_of_birth": str(patient.date_of_birth) if patient.date_of_birth else None,
-                "phone": patient.phone,
-                "address": patient.address,
-                "emergency_contact": patient.emergency_contact,
-                "notes": patient.notes
-            })
-        
+            patient_info.update(
+                {
+                    "gender": patient.gender,
+                    "date_of_birth": str(patient.date_of_birth)
+                    if patient.date_of_birth
+                    else None,
+                    "phone": patient.phone,
+                    "address": patient.address,
+                    "emergency_contact": patient.emergency_contact,
+                    "notes": patient.notes,
+                }
+            )
+
         # 2. 获取预提取的文档内容（如果提供了document_ids）
         extracted_documents = []
         if request.document_ids:
-            logger.info(f"Fetching {len(request.document_ids)} pre-extracted documents from database...")
+            logger.info(
+                f"Fetching {len(request.document_ids)} pre-extracted documents from database..."
+            )
             stmt = select(MedicalDocument).where(
                 MedicalDocument.id.in_(request.document_ids),
-                MedicalDocument.upload_status == "processed"  # 只获取已处理完成的文档
+                MedicalDocument.upload_status == "processed",  # 只获取已处理完成的文档
             )
             result = await db.execute(stmt)
             documents = result.scalars().all()
-            
+
             for doc in documents:
                 # Extract text content from extracted_content (handle both old string format and new object format)
                 extracted_text = None
                 if doc.extracted_content:
                     if isinstance(doc.extracted_content, dict):
                         # New format: {text: "...", markdown: "..."}
-                        extracted_text = doc.extracted_content.get("text") or doc.extracted_content.get("markdown")
+                        extracted_text = doc.extracted_content.get(
+                            "text"
+                        ) or doc.extracted_content.get("markdown")
                     elif isinstance(doc.extracted_content, str):
                         # Old format: direct string
                         extracted_text = doc.extracted_content
-                
+
                 # Extract text from cleaned_content object (handle format: {text: "...", metadata: {...}})
                 cleaned_text = None
                 if doc.cleaned_content:
@@ -316,46 +341,92 @@ async def comprehensive_diagnosis(
                         cleaned_text = doc.cleaned_content.get("text")
                     elif isinstance(doc.cleaned_content, str):
                         cleaned_text = doc.cleaned_content
-                
-                extracted_documents.append({
-                    "id": str(doc.id),
-                    "original_filename": doc.original_filename,
-                    "extracted_content": extracted_text,
-                    "cleaned_content": cleaned_text,
-                    "pii_cleaning_status": doc.pii_cleaning_status,
-                    "pii_detected": doc.pii_detected or []
-                })
-            
+
+                extracted_documents.append(
+                    {
+                        "id": str(doc.id),
+                        "original_filename": doc.original_filename,
+                        "extracted_content": extracted_text,
+                        "cleaned_content": cleaned_text,
+                        "pii_cleaning_status": doc.pii_cleaning_status,
+                        "pii_detected": doc.pii_detected or [],
+                    }
+                )
+
             logger.info(f"Found {len(extracted_documents)} processed documents")
 
         # 3. 获取患者的慢性病信息
         logger.info("Fetching patient's chronic diseases...")
         chronic_diseases = []
         try:
-            stmt = select(PatientChronicCondition, ChronicDisease).join(
-                ChronicDisease,
-                PatientChronicCondition.disease_id == ChronicDisease.id
-            ).where(
-                PatientChronicCondition.patient_id == current_user.id,
-                PatientChronicCondition.is_active == True
+            stmt = (
+                select(PatientChronicCondition, ChronicDisease)
+                .join(
+                    ChronicDisease,
+                    PatientChronicCondition.disease_id == ChronicDisease.id,
+                )
+                .where(
+                    PatientChronicCondition.patient_id == current_user.id,
+                    PatientChronicCondition.is_active == True,
+                )
             )
             result = await db.execute(stmt)
             conditions = result.all()
 
             for condition, disease in conditions:
-                chronic_diseases.append({
-                    "id": str(disease.id),
-                    "icd10_code": disease.icd10_code,
-                    "icd10_name": disease.icd10_name,
-                    "disease_type": disease.disease_type,
-                    "severity": condition.severity,
-                    "medical_notes": disease.medical_notes
-                })
+                chronic_diseases.append(
+                    {
+                        "id": str(disease.id),
+                        "icd10_code": disease.icd10_code,
+                        "icd10_name": disease.icd10_name,
+                        "disease_type": disease.disease_type,
+                        "severity": condition.severity,
+                        "medical_notes": disease.medical_notes,
+                    }
+                )
             logger.info(f"Found {len(chronic_diseases)} chronic diseases for patient")
         except Exception as e:
             logger.warning(f"Failed to fetch chronic diseases: {e}")
 
-        # 4. Reload AI configuration from database before calling AI
+        # 4. 获取患者的历史诊断记录
+        logger.info("Fetching patient's medical history...")
+        medical_history = []
+        try:
+            from sqlalchemy import desc
+
+            # 查询患者最近的历史诊断记录（最多5条）
+            stmt = (
+                select(MedicalCase)
+                .where(
+                    MedicalCase.patient_id == current_user.id,
+                    MedicalCase.diagnosis.isnot(None),  # 只查询有诊断结果的记录
+                )
+                .order_by(desc(MedicalCase.created_at))
+                .limit(5)
+            )
+            result = await db.execute(stmt)
+            history_cases = result.scalars().all()
+
+            for case in history_cases:
+                medical_history.append(
+                    {
+                        "id": str(case.id),
+                        "title": case.title,
+                        "symptoms": case.symptoms,
+                        "diagnosis": case.diagnosis,
+                        "severity": case.severity,
+                        "created_at": case.created_at.isoformat()
+                        if case.created_at
+                        else None,
+                    }
+                )
+            logger.info(
+                f"Found {len(medical_history)} historical diagnoses for patient"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to fetch medical history: {e}")
+
+        # 5. Reload AI configuration from database before calling AI
         logger.info("Reloading AI configuration from database...")
         ai_config_reloaded = await ai_service.reload_config_from_db(db)
         if ai_config_reloaded:
@@ -363,7 +434,7 @@ async def comprehensive_diagnosis(
         else:
             logger.warning("⚠️ Using fallback AI configuration from environment")
 
-        # 5. 调用完整诊断流程（包含慢性病信息）
+        # 5. 调用完整诊断流程（包含慢性病信息和历史诊断）
         result = await ai_service.comprehensive_diagnosis(
             symptoms=request.symptoms,
             patient_info=patient_info,
@@ -375,25 +446,26 @@ async def comprehensive_diagnosis(
             extracted_documents=extracted_documents if extracted_documents else None,
             user_id=str(current_user.id),
             db=db,
-            chronic_diseases=chronic_diseases if chronic_diseases else None
+            chronic_diseases=chronic_diseases if chronic_diseases else None,
+            medical_history=medical_history if medical_history else None,
         )
 
-        if not result.get('success'):
+        if not result.get("success"):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result.get('error', '诊断失败')
+                detail=result.get("error", "诊断失败"),
             )
-        
+
         # 3. 保存诊断结果到病历记录
         medical_case = None
         try:
             case_service = MedicalCaseService(db)
-            
+
             # 构建病历标题
             title = f"AI诊断 - {request.severity}"
             if request.duration:
                 title += f" - {request.duration}"
-            
+
             # 构建详细描述
             description_parts = []
             if request.triggers:
@@ -401,7 +473,7 @@ async def comprehensive_diagnosis(
             if request.previous_diseases:
                 description_parts.append(f"既往病史: {request.previous_diseases}")
             description = " | ".join(description_parts) if description_parts else None
-            
+
             # 创建病历记录 - 使用current_user.id作为patient_id
             medical_case = await case_service.create_medical_case(
                 patient_id=current_user.id,
@@ -409,7 +481,7 @@ async def comprehensive_diagnosis(
                 symptoms=request.symptoms,
                 diagnosis=result["diagnosis"],
                 severity=request.severity,
-                description=description or ""
+                description=description or "",
             )
             logger.info(f"病历记录已创建: {medical_case.id}")
         except Exception as save_error:
@@ -418,7 +490,9 @@ async def comprehensive_diagnosis(
 
         return {
             "success": True,
-            "case_id": str(medical_case.id) if medical_case else f"case-{current_user.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "case_id": str(medical_case.id)
+            if medical_case
+            else f"case-{current_user.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
             "diagnosis": result["diagnosis"],
             "model_used": result.get("model_used", ""),
             "tokens_used": result.get("tokens_used", 0),
@@ -427,10 +501,12 @@ async def comprehensive_diagnosis(
             "workflow_info": result.get("workflow", {}),
             # 知识库溯源信息（新增）
             "knowledge_base_sources": result.get("knowledge_base_sources", []),
-            "knowledge_base_selection_reasoning": result.get("knowledge_base_selection_reasoning", ""),
+            "knowledge_base_selection_reasoning": result.get(
+                "knowledge_base_selection_reasoning", ""
+            ),
             "created_at": datetime.utcnow().isoformat(),
             "status": "completed",
-            "saved_to_records": medical_case is not None
+            "saved_to_records": medical_case is not None,
         }
 
     except HTTPException:
@@ -439,7 +515,7 @@ async def comprehensive_diagnosis(
         logger.error(f"完整诊断流程失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"诊断失败: {str(e)}"
+            detail=f"诊断失败: {str(e)}",
         )
 
 
@@ -447,13 +523,13 @@ async def comprehensive_diagnosis(
 async def comprehensive_diagnosis_stream(
     request: ComprehensiveDiagnosisRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     完整诊断工作流（流式输出）
-    
+
     整合：个人信息 + 诊疗提交信息(MinerU提取) + 知识库信息 -> AI诊断（流式返回）
-    
+
     工作流程：
     1. 获取患者个人信息
     2. 提取上传文件的文本内容（MinerU）
@@ -464,31 +540,39 @@ async def comprehensive_diagnosis_stream(
     try:
         # 1. 获取患者个人信息
         patient_service = PatientService(db)
-        patients = await patient_service.get_patients_by_user(current_user.id, skip=0, limit=1)
-        
+        patients = await patient_service.get_patients_by_user(
+            current_user.id, skip=0, limit=1
+        )
+
         patient_info = {
             "full_name": current_user.full_name,
-            "email": current_user.email
+            "email": current_user.email,
         }
-        
+
         if patients:
             patient = patients[0]
-            patient_info.update({
-                "gender": patient.gender,
-                "date_of_birth": str(patient.date_of_birth) if patient.date_of_birth else None,
-                "phone": patient.phone,
-                "address": patient.address,
-                "emergency_contact": patient.emergency_contact,
-                "notes": patient.notes
-            })
-        
+            patient_info.update(
+                {
+                    "gender": patient.gender,
+                    "date_of_birth": str(patient.date_of_birth)
+                    if patient.date_of_birth
+                    else None,
+                    "phone": patient.phone,
+                    "address": patient.address,
+                    "emergency_contact": patient.emergency_contact,
+                    "notes": patient.notes,
+                }
+            )
+
         # 2. 获取预提取的文档内容（如果提供了document_ids）
         extracted_documents = []
         if request.document_ids:
-            logger.info(f"Fetching {len(request.document_ids)} pre-extracted documents from database...")
+            logger.info(
+                f"Fetching {len(request.document_ids)} pre-extracted documents from database..."
+            )
             stmt = select(MedicalDocument).where(
                 MedicalDocument.id.in_(request.document_ids),
-                MedicalDocument.upload_status == "processed"  # 只获取已处理完成的文档
+                MedicalDocument.upload_status == "processed",  # 只获取已处理完成的文档
             )
             result = await db.execute(stmt)
             documents = result.scalars().all()
@@ -499,11 +583,13 @@ async def comprehensive_diagnosis_stream(
                 if doc.extracted_content:
                     if isinstance(doc.extracted_content, dict):
                         # New format: {text: "...", markdown: "..."}
-                        extracted_text = doc.extracted_content.get("text") or doc.extracted_content.get("markdown")
+                        extracted_text = doc.extracted_content.get(
+                            "text"
+                        ) or doc.extracted_content.get("markdown")
                     elif isinstance(doc.extracted_content, str):
                         # Old format: direct string
                         extracted_text = doc.extracted_content
-                
+
                 # Extract text from cleaned_content object (handle format: {text: "...", metadata: {...}})
                 cleaned_text = None
                 if doc.cleaned_content:
@@ -511,15 +597,17 @@ async def comprehensive_diagnosis_stream(
                         cleaned_text = doc.cleaned_content.get("text")
                     elif isinstance(doc.cleaned_content, str):
                         cleaned_text = doc.cleaned_content
-                
-                extracted_documents.append({
-                    "id": str(doc.id),
-                    "original_filename": doc.original_filename,
-                    "extracted_content": extracted_text,
-                    "cleaned_content": cleaned_text,
-                    "pii_cleaning_status": doc.pii_cleaning_status,
-                    "pii_detected": doc.pii_detected or []
-                })
+
+                extracted_documents.append(
+                    {
+                        "id": str(doc.id),
+                        "original_filename": doc.original_filename,
+                        "extracted_content": extracted_text,
+                        "cleaned_content": cleaned_text,
+                        "pii_cleaning_status": doc.pii_cleaning_status,
+                        "pii_detected": doc.pii_detected or [],
+                    }
+                )
 
             logger.info(f"Found {len(extracted_documents)} processed documents")
 
@@ -527,31 +615,76 @@ async def comprehensive_diagnosis_stream(
         logger.info("Fetching patient's chronic diseases for streaming...")
         chronic_diseases = []
         try:
-            stmt = select(PatientChronicCondition, ChronicDisease).join(
-                ChronicDisease,
-                PatientChronicCondition.disease_id == ChronicDisease.id
-            ).where(
-                PatientChronicCondition.patient_id == current_user.id,
-                PatientChronicCondition.is_active == True
+            stmt = (
+                select(PatientChronicCondition, ChronicDisease)
+                .join(
+                    ChronicDisease,
+                    PatientChronicCondition.disease_id == ChronicDisease.id,
+                )
+                .where(
+                    PatientChronicCondition.patient_id == current_user.id,
+                    PatientChronicCondition.is_active == True,
+                )
             )
             result = await db.execute(stmt)
             conditions = result.all()
 
             for condition, disease in conditions:
-                chronic_diseases.append({
-                    "id": str(disease.id),
-                    "icd10_code": disease.icd10_code,
-                    "icd10_name": disease.icd10_name,
-                    "disease_type": disease.disease_type,
-                    "severity": condition.severity,
-                    "medical_notes": disease.medical_notes
-                })
-            logger.info(f"Found {len(chronic_diseases)} chronic diseases for patient (streaming)")
+                chronic_diseases.append(
+                    {
+                        "id": str(disease.id),
+                        "icd10_code": disease.icd10_code,
+                        "icd10_name": disease.icd10_name,
+                        "disease_type": disease.disease_type,
+                        "severity": condition.severity,
+                        "medical_notes": disease.medical_notes,
+                    }
+                )
+            logger.info(
+                f"Found {len(chronic_diseases)} chronic diseases for patient (streaming)"
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch chronic diseases for streaming: {e}")
 
-        # 4. 查询知识库（在流式输出前获取，以便在结束时返回）
-        from app.services.generic_rag_selector import GenericRAGSelector
+        # 4. 获取患者的历史诊断记录
+        logger.info("Fetching patient's medical history for streaming...")
+        medical_history = []
+        try:
+            from sqlalchemy import desc
+
+            stmt = (
+                select(MedicalCase)
+                .where(
+                    MedicalCase.patient_id == current_user.id,
+                    MedicalCase.diagnosis.isnot(None),
+                )
+                .order_by(desc(MedicalCase.created_at))
+                .limit(5)
+            )
+            result = await db.execute(stmt)
+            history_cases = result.scalars().all()
+
+            for case in history_cases:
+                medical_history.append(
+                    {
+                        "id": str(case.id),
+                        "title": case.title,
+                        "symptoms": case.symptoms,
+                        "diagnosis": case.diagnosis,
+                        "severity": case.severity,
+                        "created_at": case.created_at.isoformat()
+                        if case.created_at
+                        else None,
+                    }
+                )
+            logger.info(
+                f"Found {len(medical_history)} historical diagnoses for patient (streaming)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to fetch medical history for streaming: {e}")
+
+        # 5. 查询知识库（在流式输出前获取，以便在结束时返回）
+        from app.services.multi_path_rag_selector import MultiPathRAGSelector
         from datetime import datetime
 
         kb_sources = []
@@ -559,66 +692,99 @@ async def comprehensive_diagnosis_stream(
         try:
             # 计算患者年龄
             patient_age = None
-            date_of_birth_str = patient_info.get('date_of_birth')
-            if date_of_birth_str and date_of_birth_str != 'None':
+            date_of_birth_str = patient_info.get("date_of_birth")
+            if date_of_birth_str and date_of_birth_str != "None":
                 try:
-                    birth_date = datetime.strptime(date_of_birth_str, '%Y-%m-%d')
+                    birth_date = datetime.strptime(date_of_birth_str, "%Y-%m-%d")
                     today = datetime.now()
-                    patient_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+                    patient_age = (
+                        today.year
+                        - birth_date.year
+                        - (
+                            (today.month, today.day)
+                            < (birth_date.month, birth_date.day)
+                        )
+                    )
                 except (ValueError, TypeError):
                     patient_age = None
 
             # 提取文档内容用于增强检索
             document_texts = []
             for doc in extracted_documents:
-                if doc.get('cleaned_content'):
-                    document_texts.append(doc['cleaned_content'])
-                elif doc.get('extracted_content'):
-                    document_texts.append(doc['extracted_content'])
+                if doc.get("cleaned_content"):
+                    document_texts.append(doc["cleaned_content"])
+                elif doc.get("extracted_content"):
+                    document_texts.append(doc["extracted_content"])
 
-            selector = GenericRAGSelector(db)
+            selector = MultiPathRAGSelector(db)
             rag_result = await selector.select_knowledge_bases(
                 symptoms=request.symptoms,
                 document_texts=document_texts,
                 patient_age=patient_age,
                 top_k=5,
-                min_similarity=0.5
+                min_similarity=0.5,
+                enable_multi_path=True,
             )
-            
+
             # 格式化知识库源信息
-            for source in rag_result.get('sources', []):
-                category = source.get('category', '')
+            for source in rag_result.get("sources", []):
+                category = source.get("category", "")
                 chunks_data = []
-                for chunk in source.get('chunks', []):
-                    chunks_data.append({
-                        "chunk_id": chunk.get('chunk_id'),
-                        "section_title": chunk.get('section_title', category),
-                        "text_preview": chunk.get('text', '')[:200] + "..." if len(chunk.get('text', '')) > 200 else chunk.get('text', ''),
-                        "similarity_score": chunk.get('similarity_score', 0),
-                        "source_file": chunk.get('source_file')
-                    })
-                
+                for chunk in source.get("chunks", []):
+                    # Ensure document_title is populated
+                    document_title = (
+                        chunk.get("document_title")
+                        or chunk.get("source_file")
+                        or category
+                    )
+                    chunks_data.append(
+                        {
+                            "chunk_id": chunk.get("chunk_id"),
+                            "document_title": document_title,
+                            "section_title": chunk.get("section_title", category),
+                            "chunk_text": chunk.get(
+                                "chunk_text", chunk.get("text", "")
+                            ),
+                            "text_preview": (
+                                chunk.get("chunk_text") or chunk.get("text", "")
+                            )[:200]
+                            + "..."
+                            if len(chunk.get("chunk_text") or chunk.get("text", ""))
+                            > 200
+                            else (chunk.get("chunk_text") or chunk.get("text", "")),
+                            "relevance_score": chunk.get(
+                                "relevance_score", chunk.get("similarity_score", 0)
+                            ),
+                            "similarity_score": chunk.get("similarity_score", 0),
+                            "source_file": chunk.get("source_file"),
+                        }
+                    )
+
                 # 获取分类显示名称
                 category_names = {
-                    'respiratory': '呼吸系统疾病',
-                    'cardiovascular': '心血管系统疾病',
-                    'digestive': '消化系统疾病',
-                    'pediatric': '儿科疾病',
-                    'dermatology': '皮肤疾病',
-                    'neurological': '神经系统疾病',
-                    'general': '通用医学知识'
+                    "respiratory": "呼吸系统疾病",
+                    "cardiovascular": "心血管系统疾病",
+                    "digestive": "消化系统疾病",
+                    "pediatric": "儿科疾病",
+                    "dermatology": "皮肤疾病",
+                    "neurological": "神经系统疾病",
+                    "general": "通用医学知识",
+                    "unified": "医学知识库",
+                    "医学知识库": "医学知识库",
                 }
-                
-                kb_sources.append({
-                    "category": category,
-                    "category_name": category_names.get(category, category),
-                    "relevance_score": source.get('relevance_score', 0),
-                    "selection_reason": source.get('selection_reason', ''),
-                    "chunks_count": len(source.get('chunks', [])),
-                    "chunks": chunks_data
-                })
-            
-            kb_selection_reasoning = rag_result.get('selection_reasoning', '')
+
+                kb_sources.append(
+                    {
+                        "category": category,
+                        "category_name": category_names.get(category, category),
+                        "relevance_score": source.get("relevance_score", 0),
+                        "selection_reason": source.get("selection_reason", ""),
+                        "chunks_count": len(source.get("chunks", [])),
+                        "chunks": chunks_data,
+                    }
+                )
+
+            kb_selection_reasoning = rag_result.get("selection_reasoning", "")
             logger.info(f"知识库查询完成，找到 {len(kb_sources)} 个知识源")
         except Exception as kb_error:
             logger.warning(f"流式诊断前知识库查询失败: {kb_error}")
@@ -629,7 +795,9 @@ async def comprehensive_diagnosis_stream(
         if ai_config_reloaded:
             logger.info("✅ AI configuration reloaded from database for streaming")
         else:
-            logger.warning("⚠️ Using fallback AI configuration from environment for streaming")
+            logger.warning(
+                "⚠️ Using fallback AI configuration from environment for streaming"
+            )
 
         # 6. 调用流式诊断流程（包含慢性病信息）
         async def generate_stream():
@@ -642,170 +810,196 @@ async def comprehensive_diagnosis_stream(
                 duration=request.duration,
                 severity=request.severity,
                 uploaded_files=request.uploaded_files or [],
-                extracted_documents=extracted_documents if extracted_documents else None,
+                extracted_documents=extracted_documents
+                if extracted_documents
+                else None,
                 disease_category=request.disease_category,
                 language=request.language,
                 user_id=str(current_user.id),
                 db=db,
-                chronic_diseases=chronic_diseases if chronic_diseases else None
+                chronic_diseases=chronic_diseases if chronic_diseases else None,
+                medical_history=medical_history if medical_history else None,
             ):
                 full_diagnosis += chunk
                 # 发送 SSE 格式数据
                 yield f"data: {json.dumps({'chunk': chunk, 'done': False})}\n\n"
-            
+
             # 3. 保存诊断结果到病历记录 - 直接使用current_user.id
             try:
                 case_service = MedicalCaseService(db)
-                
+
                 if request.case_id:
                     # 如果提供了case_id，更新现有病历
                     medical_case = await case_service.get_medical_case_by_id(
-                        case_id=request.case_id,
-                        patient_id=current_user.id
+                        case_id=request.case_id, patient_id=current_user.id
                     )
-                    
+
                     if medical_case:
                         # 更新病历的诊断结果
                         medical_case.diagnosis = full_diagnosis
-                        medical_case.status = 'completed'
+                        medical_case.status = "completed"
                         # 设置分享权限
-                        medical_case.is_shared = request.share_with_doctor
-                        medical_case.share_scope = 'to_doctor' if request.share_with_doctor else 'private'
+                        medical_case.is_shared = request.share_with_doctors
+                        medical_case.share_scope = (
+                            "to_doctor" if request.share_with_doctors else "private"
+                        )
                         await db.commit()
                         await db.refresh(medical_case)
-                        logger.info(f"已更新现有病历的诊断结果: {medical_case.id}, 分享权限: {request.share_with_doctor}")
-                        
+                        logger.info(
+                            f"已更新现有病历的诊断结果: {medical_case.id}, 分享权限: {request.share_with_doctors}"
+                        )
+
                         # 1. 如果用户勾选了"允许将本次诊断信息共享给医生端"，创建公开共享病例记录（所有医生可见）
-                        if request.share_with_doctor:
+                        if request.share_with_doctors:
                             await create_shared_case(db, medical_case, current_user)
-                        
+
                         # 2. 如果用户@提及了特定医生，无论是否勾选共享，都要分享给这些医生（私有共享）
                         doctors_to_share = []
                         if request.doctor_ids:
                             doctors_to_share.extend(request.doctor_ids)
                         if request.doctor_id:
                             doctors_to_share.append(request.doctor_id)
-                        
+
                         # 去重
                         doctors_to_share = list(set(doctors_to_share))
-                        
+
                         for doctor_id in doctors_to_share:
                             try:
-                                await share_case_with_doctor(db, medical_case, current_user, doctor_id)
+                                await share_case_with_doctor(
+                                    db, medical_case, current_user, doctor_id
+                                )
                                 logger.info(f"病例已@分享给指定医生: {doctor_id}")
                             except Exception as share_error:
-                                logger.error(f"@分享给医生 {doctor_id} 失败: {str(share_error)}")
+                                logger.error(
+                                    f"@分享给医生 {doctor_id} 失败: {str(share_error)}"
+                                )
                     else:
-                        logger.warning(f"未找到指定的病历ID: {request.case_id}，将创建新病历")
+                        logger.warning(
+                            f"未找到指定的病历ID: {request.case_id}，将创建新病历"
+                        )
                         medical_case = None
-                
+
                 if not request.case_id or not medical_case:
                     # 创建新病历记录 - 使用current_user.id作为patient_id
                     # 构建病历标题
                     title = f"AI诊断 - {request.severity}"
                     if request.duration:
                         title += f" - {request.duration}"
-                    
+
                     # 构建详细描述
                     description_parts = []
                     if request.triggers:
                         description_parts.append(f"诱发因素: {request.triggers}")
                     if request.previous_diseases:
-                        description_parts.append(f"既往病史: {request.previous_diseases}")
-                    description = " | ".join(description_parts) if description_parts else None
-                    
+                        description_parts.append(
+                            f"既往病史: {request.previous_diseases}"
+                        )
+                    description = (
+                        " | ".join(description_parts) if description_parts else None
+                    )
+
                     medical_case = await case_service.create_medical_case(
                         patient_id=current_user.id,
                         title=title,
                         symptoms=request.symptoms,
                         diagnosis=full_diagnosis,
                         severity=request.severity,
-                        description=description or ""
+                        description=description or "",
                     )
-                    
+
                     # 设置分享权限
-                    medical_case.is_shared = request.share_with_doctor
-                    medical_case.share_scope = 'to_doctor' if request.share_with_doctor else 'private'
+                    medical_case.is_shared = request.share_with_doctors
+                    medical_case.share_scope = (
+                        "to_doctor" if request.share_with_doctors else "private"
+                    )
                     await db.commit()
                     await db.refresh(medical_case)
-                    
+
                     # AI诊断完成，更新病历状态为"已完成"
                     medical_case = await case_service.update_medical_case_status(
                         case_id=medical_case.id,
                         patient_id=current_user.id,
-                        status='completed'
+                        status="completed",
                     )
-                    logger.info(f"病历状态已更新为'completed': {medical_case.id}, 分享权限: {request.share_with_doctor}")
-                    
+                    logger.info(
+                        f"病历状态已更新为'completed': {medical_case.id}, 分享权限: {request.share_with_doctors}"
+                    )
+
                     # 1. 如果用户勾选了"允许将本次诊断信息共享给医生端"，创建公开共享病例记录（所有医生可见）
-                    if request.share_with_doctor:
+                    if request.share_with_doctors:
                         await create_shared_case(db, medical_case, current_user)
-                    
+
                     # 2. 如果用户@提及了特定医生，无论是否勾选共享，都要分享给这些医生（私有共享）
                     doctors_to_share = []
                     if request.doctor_ids:
                         doctors_to_share.extend(request.doctor_ids)
                     if request.doctor_id:
                         doctors_to_share.append(request.doctor_id)
-                    
+
                     # 去重
                     doctors_to_share = list(set(doctors_to_share))
-                    
+
                     for doctor_id in doctors_to_share:
                         try:
-                            await share_case_with_doctor(db, medical_case, current_user, doctor_id)
+                            await share_case_with_doctor(
+                                db, medical_case, current_user, doctor_id
+                            )
                             logger.info(f"病例已@分享给指定医生: {doctor_id}")
                         except Exception as share_error:
-                            logger.error(f"@分享给医生 {doctor_id} 失败: {str(share_error)}")
+                            logger.error(
+                                f"@分享给医生 {doctor_id} 失败: {str(share_error)}"
+                            )
 
                 # 发送完成信息
                 completion_data = {
-                    'done': True,
-                    'case_id': str(medical_case.id),
-                    'saved_to_records': True,
-                    'status': 'completed',
-                    'model_used': ai_service.model_id,  # 使用实际配置的模型ID
-                    'tokens_used': len(full_diagnosis) * 2,  # 估算token用量
-                    'created_at': medical_case.created_at.isoformat() if medical_case.created_at else datetime.utcnow().isoformat(),
-                    'knowledge_base_sources': kb_sources,
-                    'knowledge_base_selection_reasoning': kb_selection_reasoning
+                    "done": True,
+                    "case_id": str(medical_case.id),
+                    "saved_to_records": True,
+                    "status": "completed",
+                    "model_used": ai_service.model_id,  # 使用实际配置的模型ID
+                    "tokens_used": len(full_diagnosis) * 2,  # 估算token用量
+                    "created_at": medical_case.created_at.isoformat()
+                    if medical_case.created_at
+                    else datetime.utcnow().isoformat(),
+                    "knowledge_base_sources": kb_sources,
+                    "knowledge_base_selection_reasoning": kb_selection_reasoning,
                 }
                 yield f"data: {json.dumps(completion_data)}\n\n"
             except Exception as save_error:
                 logger.error(f"保存病历记录失败: {str(save_error)}")
                 # 保存失败不影响诊断结果返回，只是记录日志
                 completion_data = {
-                    'done': True,
-                    'case_id': f"case-{current_user.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-                    'saved_to_records': False,
-                    'save_error': str(save_error),
-                    'knowledge_base_sources': kb_sources,
-                    'knowledge_base_selection_reasoning': kb_selection_reasoning
+                    "done": True,
+                    "case_id": f"case-{current_user.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                    "saved_to_records": False,
+                    "save_error": str(save_error),
+                    "knowledge_base_sources": kb_sources,
+                    "knowledge_base_selection_reasoning": kb_selection_reasoning,
                 }
                 yield f"data: {json.dumps(completion_data)}\n\n"
-        
+
         return StreamingResponse(
             generate_stream(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
+                "X-Accel-Buffering": "no",
+            },
         )
 
     except Exception as e:
         logger.error(f"流式诊断流程失败: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"诊断失败: {str(e)}"
+            detail=f"诊断失败: {str(e)}",
         )
 
 
 @router.post("/extract-document")
 async def extract_medical_document(
     request: DocumentExtractionRequest,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     文档内容提取
@@ -818,14 +1012,14 @@ async def extract_medical_document(
         if not result.get("success"):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result.get("error", "文档提取失败")
+                detail=result.get("error", "文档提取失败"),
             )
 
         return {
             "success": True,
             "extracted_data": result.get("raw_data", {}),
             "extracted_text": result.get("extracted_text", ""),
-            "extraction_type": request.extraction_type
+            "extraction_type": request.extraction_type,
         }
 
     except HTTPException:
@@ -833,7 +1027,7 @@ async def extract_medical_document(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"文档提取失败: {str(e)}"
+            detail=f"文档提取失败: {str(e)}",
         )
 
 
@@ -844,24 +1038,19 @@ async def test_ai_connection():
     """
     try:
         # 测试 GLM-4.7-Flash
-        glm_result = await ai_service.chat_with_glm([
-            {"role": "user", "content": "你好，请简单自我介绍一下"}
-        ])
+        glm_result = await ai_service.chat_with_glm(
+            [{"role": "user", "content": "你好，请简单自我介绍一下"}]
+        )
 
         return {
             "glm_connection": {
                 "status": "success" if glm_result.get("success") else "failed",
-                "result": glm_result.get("content", glm_result.get("error"))
+                "result": glm_result.get("content", glm_result.get("error")),
             }
         }
 
     except Exception as e:
-        return {
-            "glm_connection": {
-                "status": "error",
-                "error": str(e)
-            }
-        }
+        return {"glm_connection": {"status": "error", "error": str(e)}}
 
 
 # 导入 datetime 用于生成 case_id

@@ -1,12 +1,15 @@
-FROM node:22-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
-# 复制静态HTML文件到根目录
-COPY ./*.html /app/
+COPY package.json ./
 
-# 暴露端口
+RUN npm install && npm cache clean --force
+
+COPY . .
+
+RUN mkdir -p /app/node_modules/.cache && chmod -R 777 /app/node_modules/.cache
+
 EXPOSE 3000
 
-# 启动简单HTTP服务器（从/app目录提供静态文件）
-CMD ["npx", "http-server", ".", "-p", "3000", "-c", "1", "--cors"]
+CMD ["npm", "run", "dev"]

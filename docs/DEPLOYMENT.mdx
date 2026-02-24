@@ -8,7 +8,7 @@
 
 > **MediCare_AI** 部署完整指南 / Complete deployment guide for MediCare_AI
 > 
-> **版本 / Version:** 1.0.0 | **更新日期 / Updated:** 2025-02-01
+> **版本 / Version:** 1.1.0 | **更新日期 / Updated:** 2026-02-23
 
 ---
 
@@ -697,9 +697,9 @@ npm error network request to https://registry.npmjs.org/http-server failed
 
 **New Architecture**: | 新架构：
 ```
-Nginx (static file service) + Backend API (8000)
+Nginx (React SPA static assets) + Backend API (8000)
   ├─ /api/* → Backend:8000
-  ├─ /* → Static HTML files
+  ├─ /* → React SPA build files (npm run build)
 ```
 
 **Benefits**: | 优势：
@@ -753,7 +753,7 @@ server {
 **Docker Deployment**: | Docker 部署
 1. **Avoid runtime npm install** - Should be done at build time
 2. **Use multi-stage builds** - Reduce final image size
-3. **Static files first** - Use nginx to serve in production
+3. **Static assets first** - Use nginx to serve built React SPA in production
 4. **Health checks** - Every service should have healthcheck
 5. **Resource limits** - Set memory and CPU limits for containers
 

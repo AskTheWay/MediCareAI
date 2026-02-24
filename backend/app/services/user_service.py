@@ -1,6 +1,7 @@
 """
 用户服务 - 用户管理、认证
 """
+
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 
 from app.db.database import get_db, Base
-from app.models.models import User, UserSession
+from app.models.models import User, UserSession, DoctorVerification
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password, create_token_for_user
 
@@ -52,17 +53,12 @@ class UserService:
         existing_user = await self.get_user_by_email(email)
         if existing_user:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="邮箱已被注册"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱已被注册"
             )
 
         password_hash = get_password_hash(password)
 
-        user = User(
-            email=email,
-            password_hash=password_hash,
-            full_name=full_name
-        )
+        user = User(email=email, password_hash=password_hash, full_name=full_name)
 
         try:
             self.db.add(user)
@@ -73,30 +69,28 @@ class UserService:
             logger.error(f"创建用户失败: {e}")
             await self.db.rollback()
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="创建用户失败"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="创建用户失败"
             )
 
-    async def authenticate_user(self, email: str, password: str, platform: str = "patient") -> tuple[User, dict]:
+    async def authenticate_user(
+        self, email: str, password: str, platform: str = "patient"
+    ) -> tuple[User, dict]:
         """用户认证"""
         try:
             user = await self.get_user_by_email(email)
             if not user:
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="邮箱或密码不正确"
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码不正确"
                 )
 
             if not verify_password(password, user.password_hash):
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="邮箱或密码不正确"
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码不正确"
                 )
 
             if not user.is_active:
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="账户已被禁用"
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="账户已被禁用"
                 )
 
             # 更新最后登录时间
@@ -110,9 +104,21 @@ class UserService:
                 available_platforms = self.get_available_platforms(user.role)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"作为 {user.role} 用户，您无法访问 {platform} 平台。可用平台: {', '.join(available_platforms)}"
+                    detail=f"作为 {user.role} 用户，您无法访问 {platform} 平台。可用平台: {', '.join(available_platforms)}",
                 )
-            
+
+            if user.role == "doctor" and platform == "doctor":
+                stmt = select(DoctorVerification).where(
+                    DoctorVerification.user_id == user.id
+                )
+                result = await self.db.execute(stmt)
+                verification = result.scalar_one_or_none()
+                if verification and verification.status == "revoked":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="您的医生认证已被撤销，无法登录医生平台。请联系管理员重新认证。",
+                    )
+
             tokens = create_token_for_user(user.id, user.email, user.role, platform)
 
             # 清理该用户的旧会话
@@ -127,7 +133,8 @@ class UserService:
                 session = UserSession(
                     user_id=user.id,
                     token_id=tokens["access_token"][:50],  # 存储部分令牌作为标识
-                    expires_at=datetime.utcnow() + timedelta(minutes=30)  # 与访问令牌过期时间一致
+                    expires_at=datetime.utcnow()
+                    + timedelta(minutes=30),  # 与访问令牌过期时间一致
                 )
                 self.db.add(session)
                 await self.db.commit()
@@ -143,8 +150,7 @@ class UserService:
         except Exception as e:
             logger.error(f"用户认证失败: {e}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="用户认证失败"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="用户认证失败"
             )
 
     async def update_user(self, user_id: str, user_data: dict) -> User:
@@ -153,8 +159,7 @@ class UserService:
             user = await self.get_user_by_id(user_id)
             if not user:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="用户不存在"
+                    status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在"
                 )
 
             # 只更新提供的字段
@@ -173,23 +178,23 @@ class UserService:
             await self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="更新用户信息失败"
+                detail="更新用户信息失败",
             )
 
-    async def change_password(self, user_id: str, current_password: str, new_password: str) -> bool:
+    async def change_password(
+        self, user_id: str, current_password: str, new_password: str
+    ) -> bool:
         """修改密码"""
         try:
             user = await self.get_user_by_id(user_id)
             if not user:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="用户不存在"
+                    status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在"
                 )
 
             if not verify_password(current_password, user.password_hash):
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="当前密码不正确"
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码不正确"
                 )
 
             user.password_hash = get_password_hash(new_password)
@@ -201,14 +206,15 @@ class UserService:
             logger.error(f"修改密码失败: {e}")
             await self.db.rollback()
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="修改密码失败"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="修改密码失败"
             )
 
     async def logout_user(self, user_id: str) -> bool:
         """用户登出"""
         try:
-            stmt = select(UserSession).where(UserSession.user_id == user_id, UserSession.is_active == True)
+            stmt = select(UserSession).where(
+                UserSession.user_id == user_id, UserSession.is_active == True
+            )
             result = await self.db.execute(stmt)
             sessions = result.scalars().all()
 
@@ -226,7 +232,7 @@ class UserService:
         """
         验证用户是否有权限访问目标平台
         Validate user has permission to access target platform
-        
+
         Platform permission rules:
         Platform permission rules:
         - patient role: 只能访问patient平台
@@ -235,7 +241,7 @@ class UserService:
         """
         if target_platform not in ["patient", "doctor", "admin"]:
             return False
-        
+
         if user_role == "patient":
             return target_platform == "patient"
         elif user_role == "doctor":

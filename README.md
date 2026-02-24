@@ -287,8 +287,9 @@ docker-compose up -d
             │               │               │
 ┌───────────▼──────┐ ┌──────▼──────┐ ┌──────▼────────┐
 │     Frontend     │ │   Backend   │ │  API Docs     │
-│  HTML/CSS/JS     │ │   FastAPI   │ │  (Swagger)    │
-│  (Port 3000)     │ │  (Port 8000)│ │               │
+│  React 18 + TS   │ │   FastAPI   │ │  (Swagger)    │
+│  Vite + MUI v6   │ │  (Port 8000)│ │               │
+│  (Port 3000)     │ │             │ │               │
 └──────────────────┘ └──────┬──────┘ └───────────────┘
                             │
         ┌───────────────────┼───────────────────┐
@@ -310,7 +311,7 @@ docker-compose up -d
 ### Architecture Components | 架构组件
 
 **English:**
-- **Frontend**: Vanilla HTML/CSS/JavaScript served by Nginx, three platforms (Patient/Doctor/Admin)
+- **Frontend**: React 18 + TypeScript + Vite, Material-UI v6, three platforms (Patient/Doctor/Admin)
 - **Backend**: FastAPI (Python 3.12) with async SQLAlchemy ORM
 - **Database**: PostgreSQL 17 for data persistence
 - **Cache**: Redis 7.4 for session and data caching
@@ -320,7 +321,7 @@ docker-compose up -d
 - **Vector Database**: Qwen API for knowledge base embeddings and semantic search
 
 **中文:**
-- **前端**: 原生 HTML/CSS/JavaScript，Nginx 提供静态文件服务，三端平台（患者/医生/管理员）
+- **前端**: React 18 + TypeScript + Vite，Material-UI v6 组件库，三端平台（患者/医生/管理员）
 - **后端**: FastAPI (Python 3.12)，使用异步 SQLAlchemy ORM
 - **数据库**: PostgreSQL 17 用于数据持久化
 - **缓存**: Redis 7.4 用于会话和数据缓存
@@ -350,6 +351,7 @@ MediCareAI/
 │   │   │       │   ├── doctor.py                # Doctor Platform - 医生平台
 │   │   │       │   ├── chronic_diseases.py      # Chronic Disease - 慢性病管理
 │   │   │       │   ├── monitoring.py            # System Monitoring - 系统监控
+│   │   │       │   ├── messages.py              # Messages - 站内信
 │   │   │       │   └── vector_embedding.py      # Vector Operations - 向量操作
 │   │   │       └── api.py
 │   │   ├── 📁 core/              # Core Config - 核心配置
@@ -358,15 +360,27 @@ MediCareAI/
 │   │   ├── 📁 services/          # Business Logic - 业务逻辑层
 │   │   │   ├── ai_service.py                  # AI Diagnosis - AI 诊断
 │   │   │   ├── ai_model_config_service.py     # AI Model Management - AI 模型管理
-│   │   │   ├── kb_vectorization_service.py    # KB Vectorization - 知识库向量化
-│   │   │   ├── unified_kb_service.py          # Unified KB - 统一知识库
-│   │   │   ├── vector_embedding_service.py    # Vector Embedding - 向量嵌入服务
+│   │   │   ├── ai_provider_adapters.py        # AI Provider Adapters - AI提供商适配器
+│   │   │   ├── data_sharing_consent_service.py # Data Sharing Consent - 数据分享同意服务
 │   │   │   ├── data_sharing_service.py        # Data Sharing - 数据分享服务
+│   │   │   ├── document_service.py            # Document Service - 文档服务
+│   │   │   ├── document_tasks.py              # Document Tasks - 文档处理任务
+│   │   │   ├── dynamic_config_service.py      # Dynamic Config - 动态配置服务
+│   │   │   ├── embedding_provider_registry.py # Embedding Provider Registry - 嵌入模型注册表
 │   │   │   ├── generic_rag_selector.py        # Smart RAG - 智能检索
-│   │   │   ├── pii_cleaner_service.py         # PII Cleaning - PII 清洗
+│   │   │   ├── kb_analyzer.py                 # KB Analyzer - 知识库分析器
+│   │   │   ├── kb_vectorization_service.py    # KB Vectorization - 知识库向量化
+│   │   │   ├── knowledge_base_service.py      # Knowledge Base - 知识库服务
+│   │   │   ├── medical_case_service.py        # Medical Case Service - 病例服务
+│   │   │   ├── mineru_service.py              # MinerU Service - MinerU文档服务
 │   │   │   ├── monitoring_service.py          # System Monitoring - 系统监控
-│   │   │   └── oss_service.py                 # Alibaba Cloud OSS - 阿里云 OSS
+│   │   │   ├── oss_service.py                 # Alibaba Cloud OSS - 阿里云 OSS
+│   │   │   ├── pii_cleaner_service.py         # PII Cleaning - PII 清洗
+│   │   │   ├── unified_kb_service.py          # Unified KB - 统一知识库
+│   │   │   └── vector_embedding_service.py    # Vector Embedding - 向量嵌入服务
 │   │   ├── 📁 db/                # Database - 数据库
+│   │   ├── 📁 migrations/        # Database Migrations - 数据库迁移
+│   │   │   └── versions/
 │   │   ├── 📁 utils/             # Utilities - 工具函数
 │   │   └── main.py               # Application Entry - 应用入口
 │   ├── 📁 data/
@@ -375,42 +389,70 @@ MediCareAI/
 │   ├── 📁 tests/                 # Tests - 测试
 │   ├── 📁 uploads/               # Uploads - 上传文件
 │   ├── Dockerfile                # Backend Container - 后端容器
-│   └── entrypoint.sh             # Entry Script - 启动脚本
-├── 📁 frontend/                  # Frontend - 前端 (Three Platforms)
-│   ├── index.html                # Patient Homepage - 患者首页
-│   ├── login.html                # Patient Login - 患者登录
-│   ├── register.html             # Patient Register - 患者注册
-│   ├── symptom-submit.html       # AI Diagnosis - AI 诊断
-│   ├── medical-records.html      # Medical History - 诊疗记录
-│   ├── user-profile.html         # User Profile - 个人中心
-│   ├── doctor-dashboard.html     # Doctor Dashboard - 医生仪表板
-│   ├── doctor-mentions.html      # @My Cases - @我的病例
-│   ├── doctor-case-detail.html   # Case Detail - 病例详情
-│   ├── doctor-login.html         # Doctor Login - 医生登录
-│   ├── doctor-register.html      # Doctor Register - 医生注册
-│   ├── doctor-profile.html       # Doctor Profile - 医生档案
-│   ├── admin-dashboard.html      # Admin Dashboard - 管理仪表板
-│   ├── admin-doctors.html        # Doctor Verification - 医生认证
-│   ├── admin-knowledge-base.html # Knowledge Base - 知识库管理
-│   ├── admin-ai-models.html      # AI Models - AI 模型配置
-│   ├── admin-logs.html           # Audit Logs - 审计日志
-│   ├── admin-login.html          # Admin Login - 管理员登录
-│   ├── platform-select.html      # Platform Selector - 平台选择
-│   ├── server.py                 # Dev Server - 开发服务器
-│   ├── 📁 js/                    # Shared JavaScript - 共享 JS 模块
-│   │   ├── config.js             # Global Config - 全局配置
-│   │   ├── auth.js               # Auth Module - 认证模块
-│   │   ├── api.js                # API Client - API 客户端
-│   │   ├── utils.js              # Utilities - 工具函数
-│   │   └── monitoring.js         # Monitoring - 监控模块
+│   ├── entrypoint.sh             # Entry Script - 启动脚本
+│   └── requirements.txt          # Python Dependencies - Python依赖
+├── 📁 frontend/                  # Frontend - 前端 (React + TypeScript + Vite)
 │   ├── 📁 src/                   # Source Code - 源代码
-│   │   ├── 📁 components/        # Components - 组件
-│   │   ├── 📁 contexts/          # Contexts - 上下文
-│   │   ├── 📁 pages/             # Pages - 页面
-│   │   ├── 📁 services/          # Services - 服务
-│   │   └── 📁 types/             # Types - 类型定义
+│   │   ├── 📁 components/        # Shared Components - 共享组件
+│   │   │   ├── layout/           # Layout Components - 布局组件
+│   │   │   │   ├── PatientLayout.tsx
+│   │   │   │   ├── DoctorLayout.tsx
+│   │   │   │   └── AdminLayout.tsx
+│   │   │   └── ProtectedRoute.tsx
+│   │   ├── 📁 pages/             # Page Components - 页面组件
+│   │   │   ├── 📁 auth/          # Auth Pages - 认证页面
+│   │   │   │   ├── LoginPage.tsx
+│   │   │   │   ├── RegisterPage.tsx
+│   │   │   │   ├── DoctorLoginPage.tsx
+│   │   │   │   ├── DoctorRegister.tsx
+│   │   │   │   ├── AdminLoginPage.tsx
+│   │   │   │   └── PlatformSelect.tsx
+│   │   │   ├── 📁 patient/       # Patient Pages - 患者端页面
+│   │   │   │   ├── Dashboard.tsx
+│   │   │   │   ├── SymptomSubmit.tsx
+│   │   │   │   ├── MedicalRecords.tsx
+│   │   │   │   ├── MedicalRecordDetail.tsx
+│   │   │   │   └── Profile.tsx
+│   │   │   ├── 📁 doctor/        # Doctor Pages - 医生端页面
+│   │   │   │   ├── Dashboard.tsx
+│   │   │   │   ├── Cases.tsx
+│   │   │   │   ├── CaseDetail.tsx
+│   │   │   │   ├── Mentions.tsx
+│   │   │   │   ├── Messages.tsx
+│   │   │   │   ├── Export.tsx
+│   │   │   │   ├── Profile.tsx
+│   │   │   │   └── Register.tsx
+│   │   │   └── 📁 admin/         # Admin Pages - 管理员端页面
+│   │   │       ├── Dashboard.tsx
+│   │   │       ├── Doctors.tsx
+│   │   │       ├── KnowledgeBase.tsx
+│   │   │       ├── AIModels.tsx
+│   │   │       ├── Logs.tsx
+│   │   │       └── Messages.tsx
+│   │   ├── 📁 services/          # API Services - API服务
+│   │   │   └── api.ts            # API Client - API客户端
+│   │   ├── 📁 types/             # TypeScript Types - 类型定义
+│   │   │   └── index.ts
+│   │   ├── 📁 lib/               # Utilities - 工具函数
+│   │   │   ├── config.ts         # Global Config - 全局配置
+│   │   │   └── utils.ts          # Utility Functions - 工具函数
+│   │   ├── 📁 store/             # State Management - 状态管理
+│   │   │   └── authStore.ts      # Auth Store - 认证状态
+│   │   ├── 📁 hooks/             # Custom Hooks - 自定义Hooks
+│   │   │   └── useAuth.ts        # Auth Hook - 认证Hook
+│   │   ├── 📁 contexts/          # React Contexts - 上下文
+│   │   │   └── AuthContext.tsx
+│   │   ├── App.tsx               # App Component - 应用组件
+│   │   └── index.tsx             # Entry Point - 入口文件
 │   ├── 📁 public/                # Public Assets - 静态资源
-│   └── Dockerfile                # Frontend Container - 前端容器
+│   ├── 📁 build/                 # Build Output - 构建输出
+│   ├── index.html                # HTML Entry - HTML入口
+│   ├── package.json              # Node Dependencies - Node依赖
+│   ├── tsconfig.json             # TypeScript Config - TS配置
+│   ├── vite.config.ts            # Vite Config - Vite配置
+│   ├── eslint.config.js          # ESLint Config - ESLint配置
+│   ├── Dockerfile                # Frontend Container - 前端容器
+│   └── Dockerfile.prod           # Production Container - 生产容器
 ├── 📁 docker/                    # Docker Config - Docker 配置
 │   ├── 📁 nginx/                 # Nginx Configuration - Nginx 配置
 │   │   └── ssl/                  # SSL Certificates - SSL 证书
@@ -596,9 +638,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ```bash
 cd frontend
-# No build step needed / 无需构建步骤
-# Simply serve static files / 直接提供静态文件
-python -m http.server 3000
+# Install dependencies / 安装依赖
+npm install
+
+# Start development server / 启动开发服务器
+npm run dev
+
+# Build for production / 构建生产版本
+npm run build
 ```
 
 ---

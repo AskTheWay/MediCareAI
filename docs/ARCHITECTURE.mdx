@@ -8,7 +8,7 @@
 # 系统架构 | System Architecture
 
 > **MediCare_AI** 系统架构设计文档 / System Architecture Design Document  
-> **版本 / Version:** 2.0.0 | **更新日期 / Last Updated:** 2026-02-09
+> **版本 / Version:** 2.1.0 | **更新日期 / Last Updated:** 2026-02-23
 
 ---
 
@@ -48,10 +48,12 @@ This document describes the architecture of the MediCare_AI system, an intellige
 ┌─────────────────────────────────────────────────────────────┐
 │                    前端层 / Frontend Layer                    │
 ├─────────────────────────────────────────────────────────────┤
-│  HTML5 + CSS3 + JavaScript (Vanilla)                        │
-│  • 无需构建步骤 / No build step required                     │
-│  • 使用 CSS Grid/Flexbox 的响应式设计 / Responsive design     │
-│  • Fetch API 进行 HTTP 请求 / Fetch API for HTTP requests     │
+│  React 18 + TypeScript + Vite                               │
+│  • Material-UI v6 for component library                     │
+│  • React Query v5 for data fetching                         │
+│  • Zustand for state management                             │
+│  • React Router v6 for routing                              │
+│  • Build output: npm run build → build/                     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -60,7 +62,7 @@ This document describes the architecture of the MediCare_AI system, an intellige
 ├─────────────────────────────────────────────────────────────┤
 │  Nginx (反向代理 / Reverse Proxy)                            │
 │  • SSL/TLS 终端 / SSL/TLS termination                        │
-│  • 静态文件服务 / Static file serving                        │
+│  • React SPA 静态资源 / React SPA static assets            │
 │  • 负载均衡 / Load balancing                                 │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -114,7 +116,7 @@ This document describes the architecture of the MediCare_AI system, an intellige
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Nginx 反向代理                               │
-│              (SSL/TLS, 静态文件, 负载均衡)                        │
+│         (SSL/TLS, React SPA, 反向代理, 负载均衡)                   │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
             ┌───────────────┼───────────────┐
@@ -122,7 +124,7 @@ This document describes the architecture of the MediCare_AI system, an intellige
             ▼               ▼               ▼
 ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
 │   前端页面     │   │   后端 API    │   │   API 文档    │
-│  (HTML/CSS/JS)│   │   (FastAPI)   │   │  (Swagger)    │
+│(React+TS+Vite)│   │   (FastAPI)   │   │  (Swagger)    │
 └───────────────┘   └───────┬───────┘   └───────────────┘
                             │
         ┌───────────────────┼───────────────────┐
@@ -162,37 +164,45 @@ This document describes the architecture of the MediCare_AI system, an intellige
 ### 3.1 前端层 | Frontend Layer
 
 **技术 / Technologies:**
-- HTML5, CSS3, JavaScript (ES6+)
-- 无框架 / No framework (Vanilla JS)
-- 响应式设计 / Responsive design
+- React 18 with TypeScript
+- Vite build tool
+- Material-UI (MUI) v6 component library
+- React Query v5 for server state management
+- Zustand for client state management
+- React Router v6 for SPA routing
+- React Markdown for document rendering
+- Responsive design with CSS-in-JS
 
-**三端平台 / Three Platforms:**
+**三端平台 / Three Platforms (React Components):**
 
 #### 患者端 / Patient Platform
-- `index.html` - 首页 / Homepage
-- `login.html` / `register.html` - 认证 / Authentication
-- `symptom-submit.html` - 症状提交 / Symptom submission
-- `medical-records.html` - 诊疗记录 / Medical records
-- `user-profile.html` - 用户档案 / User profile
+- `pages/patient/Dashboard.tsx` - 患者仪表板 / Patient dashboard
+- `pages/patient/SymptomSubmit.tsx` - 症状提交 / Symptom submission
+- `pages/patient/MedicalRecords.tsx` - 诊疗记录列表 / Medical records list
+- `pages/patient/MedicalRecordDetail.tsx` - 病例详情 / Case detail
+- `pages/patient/Profile.tsx` - 用户档案 / User profile
 
 #### 医生端 / Doctor Platform
-- `doctor-dashboard.html` - 医生仪表板 / Doctor dashboard
-- `doctor-mentions.html` - @我的病例 / @My cases
-- `doctor-case-detail.html` - 病例详情 / Case detail
-- `doctor-profile.html` - 医生档案 / Doctor profile
+- `pages/doctor/Dashboard.tsx` - 医生仪表板 / Doctor dashboard
+- `pages/doctor/Cases.tsx` - 病例管理 / Case management
+- `pages/doctor/CaseDetail.tsx` - 病例详情 / Case detail
+- `pages/doctor/Mentions.tsx` - @我的病例 /@My cases
+- `pages/doctor/Messages.tsx` - 消息中心 / Messages
+- `pages/doctor/Profile.tsx` - 医生档案 / Doctor profile
 
 #### 管理员端 / Admin Platform
-- `admin-dashboard.html` - 管理仪表板 / Admin dashboard
-- `admin-doctors.html` - 医生认证 / Doctor verification
-- `admin-knowledge-base.html` - 知识库管理 / Knowledge base management
-- `admin-ai-models.html` - AI 模型配置 / AI model configuration
-- `admin-logs.html` - 审计日志 / Audit logs
+- `pages/admin/Dashboard.tsx` - 管理仪表板 / Admin dashboard
+- `pages/admin/Doctors.tsx` - 医生认证 / Doctor verification
+- `pages/admin/KnowledgeBase.tsx` - 知识库管理 / Knowledge base management
+- `pages/admin/AIModels.tsx` - AI 模型配置 / AI model configuration
+- `pages/admin/Logs.tsx` - 审计日志 / Audit logs
+- `pages/admin/Messages.tsx` - 消息管理 / Message management
 
 ### 3.2 API 网关层 | API Gateway Layer
 
 **Nginx 职责 / Nginx Responsibilities:**
 - SSL/TLS 终端 / SSL/TLS termination
-- 静态文件服务 / Static file serving
+- React SPA 静态资源服务 / React SPA static assets serving
 - 反向代理到后端 / Reverse proxy to backend
 - 负载均衡 / Load balancing (多实例时)
 - 速率限制 / Rate limiting

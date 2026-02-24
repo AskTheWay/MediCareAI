@@ -1,56 +1,97 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  Box,
   Container,
   Paper,
+  Typography,
   TextField,
   Button,
-  Typography,
-  Box,
   Alert,
   CircularProgress,
+  Card,
+  CardContent,
+  Link,
+  Divider,
+  InputAdornment,
+  IconButton,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
+import {
+  Visibility,
+  VisibilityOff,
+  Email,
+  Lock,
+  LocalHospital,
+} from '@mui/icons-material';
 import { useForm } from 'react-hook-form';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { UserLogin } from '../types';
+import { useNavigate } from 'react-router-dom';
+import { useAuthContext } from '../../contexts/AuthContext';
+import type { LoginCredentials } from '../../types';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { login, isAuthenticated, isLoading, error, clearError } = useAuth();
-  
+  const { login, isAuthenticated, user, isLoading, error, clearError } = useAuthContext();
+
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  const from = location.state?.from?.pathname || '/dashboard';
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<UserLogin>();
+    setValue,
+  } = useForm<LoginCredentials>({
+    defaultValues: {
+      email: '',
+      password: '',
+      platform: 'patient',
+    },
+  });
 
-  React.useEffect(() => {
-    if (isAuthenticated) {
-      navigate(from, { replace: true });
+  // Redirect authenticated users based on their role
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const roleRoutes: { [key: string]: string } = {
+        patient: '/patient',
+        doctor: '/doctor',
+        admin: '/admin',
+      };
+      navigate(roleRoutes[user.role] || '/', { replace: true });
     }
-  }, [isAuthenticated, navigate, from]);
+  }, [isAuthenticated, user, navigate]);
 
-  React.useEffect(() => {
-    if (error) {
-      clearError();
+  useEffect(() => {
+    clearError();
+    
+    // Load saved credentials if remember me was checked
+    const savedEmail = localStorage.getItem('medicare_remember_email');
+    if (savedEmail) {
+      setValue('email', savedEmail);
+      setRememberMe(true);
     }
-  }, []);
+  }, [clearError, setValue]);
 
-  const onSubmit = async (data: UserLogin) => {
+  const onSubmit = async (data: LoginCredentials) => {
     setIsSubmitting(true);
     try {
+      if (rememberMe) {
+        localStorage.setItem('medicare_remember_email', data.email);
+      } else {
+        localStorage.removeItem('medicare_remember_email');
+      }
+      
       await login(data);
     } catch (error) {
       // 错误已经在AuthContext中处理
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleTogglePassword = () => {
+    setShowPassword(!showPassword);
   };
 
   if (isLoading) {
@@ -62,47 +103,62 @@ const LoginPage: React.FC = () => {
   }
 
   return (
-    <Container component="main" maxWidth="sm">
-      <Box
-        sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
+    <Box
+      sx={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        py: 3,
+      }}
+    >
+      <Container maxWidth="sm">
         <Paper
-          elevation={3}
+          elevation={20}
           sx={{
+            borderRadius: 4,
             padding: 4,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            width: '100%',
+            maxWidth: 450,
+            margin: '0 auto',
           }}
         >
-          <Typography component="h1" variant="h4" gutterBottom>
-            MediCare AI
-          </Typography>
-          <Typography component="h2" variant="h6" color="textSecondary" gutterBottom>
-            智能疾病管理系统
-          </Typography>
-          
-          <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ mt: 3, width: '100%' }}>
+          <Box sx={{ textAlign: 'center', mb: 4 }}>
+            <LocalHospital sx={{ fontSize: 64, color: '#667eea', mb: 2 }} />
+            <Typography variant="h4" component="h1" fontWeight="bold" color="primary" gutterBottom>
+              MediCare AI
+            </Typography>
+            <Typography variant="subtitle1" color="text.secondary">
+              智能疾病管理系统
+            </Typography>
+            
+            <Card sx={{ mt: 3, mb: 2, bgcolor: '#f8f9fa' }}>
+              <CardContent sx={{ py: 2 }}>
+                <Typography variant="h6" color="primary" gutterBottom>
+                  📋 关于 MediCare AI
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  MediCare AI 是一个依托人工智能技术实现的专业疾病管理系统。系统旨在对患者疾病进行定期随访和智能管理，
+                  集成 MinerU 文档抽取和 AI 大语言模型，为医疗工作者提供强大的辅助诊断和治疗建议。
+                  支持全科室疾病管理，包括内科、外科、儿科、妇科等多个专业领域。
+                </Typography>
+                <Typography variant="caption" color="primary" sx={{ display: 'block', mt: 1, fontWeight: 500 }}>
+                  👤 作者：苏业钦 | License: MIT
+                </Typography>
+              </CardContent>
+            </Card>
+          </Box>
+
+          <Box component="form" onSubmit={handleSubmit(onSubmit)}>
             {error && (
-              <Alert severity="error" sx={{ mb: 2 }}>
+              <Alert severity="error" sx={{ mb: 3 }} onClose={clearError}>
                 {error}
               </Alert>
             )}
             
             <TextField
-              margin="normal"
-              required
               fullWidth
-              id="email"
               label="邮箱地址"
-              autoComplete="email"
-              autoFocus
               {...register('email', {
                 required: '请输入邮箱地址',
                 pattern: {
@@ -111,18 +167,24 @@ const LoginPage: React.FC = () => {
                 },
               })}
               error={!!errors.email}
-              helperText={errors.email?.message}
-            />
-            
-            <TextField
+              helperText={errors.email?.message as string}
+              disabled={isSubmitting || isLoading}
               margin="normal"
               required
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Email color="action" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
               fullWidth
-              name="password"
               label="密码"
-              type="password"
-              id="password"
-              autoComplete="current-password"
+              type={showPassword ? 'text' : 'password'}
               {...register('password', {
                 required: '请输入密码',
                 minLength: {
@@ -131,30 +193,81 @@ const LoginPage: React.FC = () => {
                 },
               })}
               error={!!errors.password}
-              helperText={errors.password?.message}
+              helperText={errors.password?.message as string}
+              disabled={isSubmitting || isLoading}
+              margin="normal"
+              required
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Lock color="action" />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label="toggle password visibility"
+                      onClick={handleTogglePassword}
+                      edge="end"
+                      disabled={isSubmitting || isLoading}
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ mb: 2 }}
             />
-            
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  color="primary"
+                />
+              }
+              label="记住我"
+              sx={{ mb: 2 }}
+            />
+
             <Button
               type="submit"
               fullWidth
               variant="contained"
-              sx={{ mt: 3, mb: 2 }}
-              disabled={isSubmitting}
+              size="large"
+              disabled={isSubmitting || isLoading}
+              sx={{
+                py: 1.5,
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
+                },
+              }}
             >
-              {isSubmitting ? <CircularProgress size={24} /> : '登录'}
+              {isSubmitting || isLoading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                '登录'
+              )}
             </Button>
-            
-            <Box textAlign="center">
-              <Link to="/register" style={{ textDecoration: 'none' }}>
-                <Typography variant="body2" color="primary">
-                  还没有账号？立即注册
-                </Typography>
-              </Link>
-            </Box>
           </Box>
+
+          <Divider sx={{ my: 3 }} />
+
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              还没有账号？{' '}
+              <Link component="button" variant="body2" onClick={() => navigate('/register')}>
+                立即注册
+              </Link>
+            </Typography>
+          </Box>
+
+
         </Paper>
-      </Box>
-    </Container>
+      </Container>
+    </Box>
   );
 };
 

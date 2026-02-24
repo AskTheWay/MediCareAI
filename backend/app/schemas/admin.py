@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 class DashboardSummaryResponse(BaseModel):
     """Dashboard summary response | 仪表板概览响应"""
+
     timestamp: str
     system_status: Dict[str, Any]
     ai_statistics_24h: Dict[str, Any]
@@ -24,6 +25,7 @@ class DashboardSummaryResponse(BaseModel):
 
 class SystemMetricsResponse(BaseModel):
     """System metrics response | 系统指标响应"""
+
     current: Dict[str, Any]
     historical: List[Dict[str, Any]]
     summary: Dict[str, Any]
@@ -31,6 +33,7 @@ class SystemMetricsResponse(BaseModel):
 
 class AIStatisticsResponse(BaseModel):
     """AI statistics response | AI统计响应"""
+
     period_days: int
     total_requests: int
     successful: int
@@ -44,6 +47,7 @@ class AIStatisticsResponse(BaseModel):
 
 class PendingDoctorVerification(BaseModel):
     """Pending doctor verification | 待审核医生认证"""
+
     verification_id: str
     user_id: str
     doctor_name: str
@@ -58,11 +62,13 @@ class PendingDoctorVerification(BaseModel):
 
 class DoctorVerificationAction(BaseModel):
     """Doctor verification action | 医生认证操作"""
+
     notes: Optional[str] = None
 
 
 class DoctorVerificationActionResponse(BaseModel):
     """Doctor verification action response | 医生认证操作响应"""
+
     success: bool
     message: str
     verification_id: str
@@ -71,6 +77,7 @@ class DoctorVerificationActionResponse(BaseModel):
 
 class AdminOperationLogEntry(BaseModel):
     """Admin operation log entry | 管理员操作日志条目"""
+
     id: str
     admin_id: str
     timestamp: str
@@ -81,6 +88,7 @@ class AdminOperationLogEntry(BaseModel):
 
 class SystemAlert(BaseModel):
     """System alert | 系统告警"""
+
     type: str
     level: str
     message: str
@@ -91,6 +99,7 @@ class SystemAlert(BaseModel):
 
 class LogSystemMetricsResponse(BaseModel):
     """Log system metrics response | 记录系统指标响应"""
+
     success: bool
     log_id: Optional[str]
     timestamp: str
@@ -99,6 +108,7 @@ class LogSystemMetricsResponse(BaseModel):
 
 class LogAdminOperationRequest(BaseModel):
     """Log admin operation request | 记录管理员操作请求"""
+
     operation_type: str
     operation_details: Dict[str, Any]
 
@@ -106,6 +116,7 @@ class LogAdminOperationRequest(BaseModel):
 # AI Model Configuration Schemas | AI模型配置模式
 class AIModelConfig(BaseModel):
     """AI model configuration | AI模型配置"""
+
     api_url: str
     api_key: str
     model_id: str
@@ -114,6 +125,7 @@ class AIModelConfig(BaseModel):
 
 class AIModelStatus(BaseModel):
     """AI model status | AI模型状态"""
+
     model_type: str
     api_url: Optional[str] = None
     model_id: Optional[str] = None
@@ -126,6 +138,7 @@ class AIModelStatus(BaseModel):
 
 class AIModelsResponse(BaseModel):
     """AI models response | AI模型列表响应"""
+
     diagnosis_llm: AIModelStatus
     mineru: AIModelStatus
     embedding: AIModelStatus
@@ -135,11 +148,13 @@ class AIModelsResponse(BaseModel):
 
 class AIModelTestRequest(BaseModel):
     """AI model test request | AI模型测试请求"""
+
     test_payload: Optional[Dict[str, Any]] = None
 
 
 class AIModelTestResponse(BaseModel):
     """AI model test response | AI模型测试响应"""
+
     success: bool
     model_type: str
     latency_ms: float
@@ -152,6 +167,7 @@ class AIModelTestResponse(BaseModel):
 # Knowledge Base Management Schemas | 知识库管理模式
 class KnowledgeBaseDocument(BaseModel):
     """Knowledge base document | 知识库文档"""
+
     doc_id: str
     filename: str
     file_size: int
@@ -166,6 +182,7 @@ class KnowledgeBaseDocument(BaseModel):
 
 class KnowledgeBaseDocumentsResponse(BaseModel):
     """Knowledge base documents response | 知识库文档列表响应"""
+
     documents: List[KnowledgeBaseDocument]
     total_count: int
     timestamp: datetime
@@ -173,6 +190,7 @@ class KnowledgeBaseDocumentsResponse(BaseModel):
 
 class KnowledgeBaseUploadResponse(BaseModel):
     """Knowledge base upload response | 知识库上传响应"""
+
     success: bool
     doc_id: str
     filename: str
@@ -184,6 +202,7 @@ class KnowledgeBaseUploadResponse(BaseModel):
 # Enhanced Monitoring Schemas | 增强监控模式
 class AILogEntry(BaseModel):
     """AI diagnosis log entry | AI诊断日志条目"""
+
     id: str
     timestamp: datetime
     model_type: str
@@ -200,6 +219,7 @@ class AILogEntry(BaseModel):
 
 class AILogsResponse(BaseModel):
     """AI logs response | AI日志响应"""
+
     logs: List[AILogEntry]
     total_count: int
     filtered_by: Dict[str, Any]
@@ -208,14 +228,39 @@ class AILogsResponse(BaseModel):
 
 class SystemAlertsResponse(BaseModel):
     """System alerts response | 系统告警响应"""
+
     alerts: List[SystemAlert]
     total_count: int
     timestamp: datetime
 
 
 # Enhanced Doctor Verification Schemas | 增强医生认证模式
+class SingleLicenseDocument(BaseModel):
+    """Single license document | 单个执业证书"""
+
+    index: int
+    filename: str
+    upload_date: Optional[datetime] = None
+    file_exists: bool = False
+    file_path: str
+
+
+class LicenseDocumentInfo(BaseModel):
+    """License document info | 执业证书信息"""
+
+    has_document: bool
+    total_count: int = 0
+    documents: List[SingleLicenseDocument] = []
+    # 保留以下字段兼容旧代码
+    filename: Optional[str] = None
+    upload_date: Optional[datetime] = None
+    file_exists: bool = False
+    file_path: Optional[str] = None
+
+
 class DoctorVerificationDetail(BaseModel):
     """Doctor verification detail | 医生认证详情"""
+
     verification_id: str
     user_id: str
     doctor_name: str
@@ -231,16 +276,19 @@ class DoctorVerificationDetail(BaseModel):
     verified_by: Optional[str] = None
     verification_notes: Optional[str] = None
     documents: List[Dict[str, Any]] = []
+    license_document: Optional[LicenseDocumentInfo] = None
 
 
 class UpdateVerificationRequest(BaseModel):
     """Update verification request | 更新认证请求"""
+
     status: str  # 'approve', 'reject', 'revoke'
     notes: Optional[str] = None
 
 
 class UpdateVerificationResponse(BaseModel):
     """Update verification response | 更新认证响应"""
+
     success: bool
     message: str
     verification_id: str
@@ -252,8 +300,19 @@ class UpdateVerificationResponse(BaseModel):
 # System Settings Schemas | 系统设置模式
 class SystemSettings(BaseModel):
     """System settings | 系统设置"""
+
     max_file_size: int = 200 * 1024 * 1024  # 200MB
-    allowed_file_types: List[str] = [".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".ppt", ".pptx", ".md"]
+    allowed_file_types: List[str] = [
+        ".pdf",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".doc",
+        ".docx",
+        ".ppt",
+        ".pptx",
+        ".md",
+    ]
     log_level: str = "INFO"
     debug_mode: bool = False
     maintenance_mode: bool = False
@@ -271,12 +330,14 @@ class SystemSettings(BaseModel):
 
 class SystemSettingsResponse(BaseModel):
     """System settings response | 系统设置响应"""
+
     settings: SystemSettings
     timestamp: datetime
 
 
 class UpdateSystemSettingsRequest(BaseModel):
     """Update system settings request | 更新系统设置请求"""
+
     max_file_size: Optional[int] = None
     allowed_file_types: Optional[List[str]] = None
     log_level: Optional[str] = None
@@ -296,6 +357,7 @@ class UpdateSystemSettingsRequest(BaseModel):
 
 class UpdateSystemSettingsResponse(BaseModel):
     """Update system settings response | 更新系统设置响应"""
+
     success: bool
     message: str
     updated_settings: SystemSettings
@@ -305,6 +367,7 @@ class UpdateSystemSettingsResponse(BaseModel):
 # Enhanced Knowledge Base Schemas | 增强知识库模式
 class KnowledgeBaseDocumentStatus(BaseModel):
     """Knowledge base document status | 知识库文档状态"""
+
     doc_id: str
     filename: str
     status: str  # 'pending', 'processing', 'completed', 'failed'
@@ -319,6 +382,7 @@ class KnowledgeBaseDocumentStatus(BaseModel):
 
 class KnowledgeBaseDocumentStatusResponse(BaseModel):
     """Knowledge base document status response | 知识库文档状态响应"""
+
     document: KnowledgeBaseDocumentStatus
     timestamp: datetime
 
@@ -326,16 +390,20 @@ class KnowledgeBaseDocumentStatusResponse(BaseModel):
 # Enhanced AI Model Configuration Schemas | 增强AI模型配置模式
 class AIModelConfigRequest(BaseModel):
     """AI model configuration request | AI模型配置请求"""
+
     api_url: str
     api_key: str
     model_id: Optional[str] = None
     enabled: bool = True
-    provider: Optional[str] = None  # AI provider: zhipu, kimi, deepseek, ollama, vllm, lmstudio, openai, custom
+    provider: Optional[str] = (
+        None  # AI provider: zhipu, kimi, deepseek, ollama, vllm, lmstudio, openai, custom
+    )
     access_key_id: Optional[str] = None  # For OSS configuration
 
 
 class OSSConfigRequest(BaseModel):
     """OSS configuration request | OSS配置请求"""
+
     bucket: str
     endpoint: str
     access_key_id: str
@@ -345,6 +413,7 @@ class OSSConfigRequest(BaseModel):
 
 class AIModelConfigResponse(BaseModel):
     """AI model configuration response | AI模型配置响应"""
+
     success: bool
     message: str
     model_type: str
@@ -356,6 +425,7 @@ class AIModelConfigResponse(BaseModel):
 # API Key Management Schemas | API密钥管理模式
 class APIKeyMask(BaseModel):
     """API key mask for security | API密钥脱敏"""
+
     masked_key: str
     key_length: int
     is_configured: bool
@@ -363,6 +433,7 @@ class APIKeyMask(BaseModel):
 
 class SystemConfiguration(BaseModel):
     """System configuration overview | 系统配置概览"""
+
     ai_models: Dict[str, AIModelStatus]
     system_settings: SystemSettings
     database_status: Dict[str, Any]
