@@ -1,0 +1,682 @@
+{/*
+  Production Deployment Guide | 生产环境部署指南
+  
+  从开发环境迁移到生产环境的完整指南
+  Complete guide for migrating from development to production environment
+  
+  版本 / Version: 1.0.0
+  更新日期 / Updated: 2026-02-25
+*/}
+
+
+> **⚠️ 重要提示 / Important Notice**
+> 
+> 本文档描述如何将 MediCareAI 从**开发环境**迁移到**生产环境**。
+> 当前代码库配置为开发模式，生产部署前必须完成以下配置。
+>
+> This guide describes how to migrate MediCareAI from **development** to **production**.
+> The current codebase is configured for development mode, and the following configurations must be completed before production deployment.
+
+---
+
+## 📋 目录 | Table of Contents
+
+- [当前项目状态 | Current Project Status](#current-status)
+- [安全清单 | Security Checklist](#security-checklist)
+- [环境配置 | Environment Configuration](#environment-configuration)
+- [CORS 配置 | CORS Configuration](#cors-configuration)
+- [SSL/TLS 配置 | SSL/TLS Configuration](#ssl-configuration)
+- [数据库配置 | Database Configuration](#database-configuration)
+- [AI 服务配置 | AI Service Configuration](#ai-configuration)
+- [监控与日志 | Monitoring and Logging](#monitoring)
+- [部署步骤 | Deployment Steps](#deployment-steps)
+- [验证检查 | Verification Checklist](#verification)
+
+---
+
+<a name="current-status"></a>
+## 🚨 当前项目状态 | Current Project Status
+
+### 开发环境配置（当前）| Development Configuration (Current)
+
+#### 1. CORS 配置 - 允许所有源 ⚠️
+```python
+# backend/app/main.py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # ❌ 生产环境必须修改
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],  # ❌ 过于宽松
+    expose_headers=["*"],
+    max_age=3600,
+)
+```
+
+**风险 | Risks:**
+- 任何网站都可以访问你的 API
+- 容易受到 CSRF 攻击
+- 医疗数据可能被恶意网站获取
+- 违反数据保护法规（HIPAA、GDPR、网络安全法）
+
+#### 2. Trusted Host - 允许所有主机 ⚠️
+```python
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["*"],  # ❌ 生产环境必须限制
+)
+```
+
+#### 3. 调试模式 | Debug Mode
+```yaml
+# docker-compose.yml
+backend:
+  environment:
+    DEBUG: "true"  # ❌ 生产环境必须设为 false
+```
+
+#### 4. 默认密码 | Default Passwords
+```yaml
+# docker-compose.yml
+postgres:
+  environment:
+    POSTGRES_PASSWORD: medicare123456  # ❌ 必须修改
+```
+
+---
+
+<a name="security-checklist"></a>
+## ✅ 生产环境安全清单 | Production Security Checklist
+
+在部署前必须完成以下检查：
+
+### 🔐 认证与授权 | Authentication & Authorization
+- [ ] 修改所有默认密码（数据库、Redis、管理员账户）
+- [ ] 配置 JWT 密钥（至少 32 位随机字符串）
+- [ ] 启用 API 密钥加密（API_KEY_MASTER_KEY）
+- [ ] 配置密码复杂度策略
+- [ ] 启用账户锁定机制（防止暴力破解）
+
+### 🌐 网络安全 | Network Security
+- [ ] 配置 CORS 只允许特定域名
+- [ ] 启用 HTTPS（SSL/TLS 证书）
+- [ ] 配置防火墙规则（只开放必要端口）
+- [ ] 启用 DDoS 防护
+- [ ] 配置 Rate Limiting（请求频率限制）
+
+### 🏥 医疗数据安全 | Medical Data Security
+- [ ] 启用 PII 数据清洗功能
+- [ ] 配置数据加密（传输中和静态数据）
+- [ ] 启用审计日志（记录所有数据访问）
+- [ ] 配置数据备份策略
+- [ ] 设置数据保留期限
+
+### 🔍 监控与告警 | Monitoring & Alerting
+- [ ] 配置应用性能监控（APM）
+- [ ] 设置错误告警机制
+- [ ] 配置日志聚合（ELK Stack 或类似方案）
+- [ ] 设置健康检查端点监控
+- [ ] 配置 SSL 证书过期提醒
+
+---
+
+<a name="environment-configuration"></a>
+## ⚙️ 环境配置 | Environment Configuration
+
+### 1. 创建生产环境文件 | Create Production Environment File
+
+```bash
+# 复制环境变量模板
+cp .env.example .env.production
+```
+
+### 2. 配置数据库 | Database Configuration
+
+```bash
+# .env.production
+# 生成强密码（至少 32 位）
+POSTGRES_PASSWORD=$(openssl rand -base64 32)
+
+# 或使用密码管理工具
+POSTGRES_PASSWORD=your_secure_password_here
+```
+
+### 3. 配置 Redis | Redis Configuration
+
+```bash
+# .env.production
+REDIS_PASSWORD=$(openssl rand -base64 32)
+```
+
+### 4. 配置 JWT | JWT Configuration
+
+```bash
+# .env.production
+# 生成 JWT 密钥（必须至少 32 位）
+JWT_SECRET_KEY=$(openssl rand -base64 64)
+
+# 示例（不要直接使用）
+JWT_SECRET_KEY=your_jwt_secret_key_at_least_32_characters_long_change_this
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
+```
+
+### 5. 配置 API 密钥加密 | API Key Encryption
+
+```bash
+# .env.production
+# 生成主密钥（用于加密存储的 API 密钥）
+API_KEY_MASTER_KEY=$(openssl rand -base64 32)
+```
+
+---
+
+<a name="cors-configuration"></a>
+## 🔒 CORS 配置 | CORS Configuration
+
+### 修改 backend/app/core/config.py
+
+```python
+# 生产环境允许的域名
+# 根据你的实际域名修改
+cors_origins: List[str] = [
+    "https://medicare.yourdomain.com",           # 患者端主域名
+    "https://admin.medicare.yourdomain.com",     # 管理员端
+    "https://doctor.medicare.yourdomain.com",    # 医生端
+    "https://www.medicare.yourdomain.com",       # WWW 域名
+]
+
+# 或者从环境变量读取（推荐）
+cors_origins: List[str] = os.getenv(
+    "CORS_ORIGINS", 
+    "https://medicare.yourdomain.com"
+).split(",")
+```
+
+### 修改 backend/app/main.py
+
+```python
+# 方式 1：直接使用配置
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,  # 使用配置文件
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Platform", "X-Requested-With"],
+    expose_headers=["X-Process-Time"],
+    max_age=3600,
+)
+
+# 方式 2：动态判断（开发 vs 生产）
+allow_origins = (
+    ["*"] 
+    if os.getenv("DEBUG") == "true" or os.getenv("ENV") == "development"
+    else settings.cors_origins
+)
+```
+
+### 配置环境变量
+
+```bash
+# .env.production
+CORS_ORIGINS=https://medicare.yourdomain.com,https://admin.medicare.yourdomain.com
+```
+
+---
+
+<a name="ssl-configuration"></a>
+## 🔐 SSL/TLS 配置 | SSL/TLS Configuration
+
+### 1. 获取 SSL 证书 | Obtain SSL Certificate
+
+#### 方式 A：Let's Encrypt（免费）| Option A: Let's Encrypt (Free)
+```bash
+# 安装 certbot
+sudo apt-get install certbot
+
+# 获取证书
+sudo certbot certonly --standalone -d medicare.yourdomain.com -d admin.medicare.yourdomain.com
+
+# 证书位置
+# /etc/letsencrypt/live/medicare.yourdomain.com/fullchain.pem
+# /etc/letsencrypt/live/medicare.yourdomain.com/privkey.pem
+```
+
+#### 方式 B：商业证书 | Option B: Commercial Certificate
+```bash
+# 将证书文件放置在项目目录
+mkdir -p docker/nginx/ssl
+cp your_certificate.crt docker/nginx/ssl/
+cp your_private.key docker/nginx/ssl/
+cp ca_bundle.crt docker/nginx/ssl/
+```
+
+### 2. 配置 Nginx | Configure Nginx
+
+```nginx
+# docker/nginx/nginx.conf
+server {
+    listen 443 ssl http2;
+    server_name medicare.yourdomain.com;
+
+    # SSL 配置
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # 安全响应头
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# HTTP 重定向到 HTTPS
+server {
+    listen 80;
+    server_name medicare.yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+---
+
+<a name="database-configuration"></a>
+## 🗄️ 数据库配置 | Database Configuration
+
+### 1. 生产环境数据库设置 | Production Database Settings
+
+```yaml
+# docker-compose.prod.yml
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}  # 从环境变量读取
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # 备份卷
+      - ./backups:/backups
+    command: 
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=655kB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+```
+
+### 2. 数据库备份策略 | Database Backup Strategy
+
+```bash
+#!/bin/bash
+# backup.sh - 数据库备份脚本
+
+BACKUP_DIR="/backups"
+DATE=$(date +%Y%m%d_%H%M%S)
+DB_NAME="medicareai"
+DB_USER="medicare_user"
+
+# 创建备份
+docker exec medicare_postgres pg_dump -U $DB_USER -d $DB_NAME | gzip > $BACKUP_DIR/backup_$DATE.sql.gz
+
+# 保留最近 7 天的备份
+find $BACKUP_DIR -name "backup_*.sql.gz" -mtime +7 -delete
+
+# 可选：上传到云存储
+# aws s3 cp $BACKUP_DIR/backup_$DATE.sql.gz s3://your-backup-bucket/
+```
+
+---
+
+<a name="ai-configuration"></a>
+## 🤖 AI 服务配置 | AI Service Configuration
+
+### 1. 配置 AI API | Configure AI API
+
+```bash
+# .env.production
+AI_API_KEY=your_actual_ai_api_key_here
+AI_API_URL=https://api.your-ai-provider.com/v1/
+AI_MODEL_ID=unsloth/GLM-4.7-Flash-GGUF:BF16
+```
+
+### 2. 配置 MinerU | Configure MinerU
+
+```bash
+# .env.production
+MINERU_TOKEN=your_actual_mineru_token_here
+```
+
+### 3. 配置向量嵌入服务 | Configure Embedding Service
+
+```bash
+# .env.production
+EMBEDDING_API_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+EMBEDDING_API_KEY=your_qwen_api_key_here
+EMBEDDING_MODEL_ID=text-embedding-v3
+```
+
+### 4. 配置 OSS（阿里云对象存储）| Configure OSS
+
+```bash
+# .env.production
+OSS_ACCESS_KEY_ID=your_oss_access_key_id
+OSS_ACCESS_KEY_SECRET=your_oss_access_key_secret
+OSS_BUCKET=your_bucket_name
+OSS_ENDPOINT=oss-cn-beijing.aliyuncs.com
+OSS_PUBLIC_URL=https://your-bucket.oss-cn-beijing.aliyuncs.com
+```
+
+---
+
+<a name="monitoring"></a>
+## 📊 监控与日志 | Monitoring and Logging
+
+### 1. 配置日志聚合 | Configure Log Aggregation
+
+```python
+# backend/app/core/logging.py
+import logging
+import json
+from pythonjsonlogger import jsonlogger
+
+# JSON 格式日志（便于日志聚合）
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter(
+    '%(timestamp)s %(level)s %(name)s %(message)s',
+    rename_fields={'levelname': 'level', 'asctime': 'timestamp'}
+)
+logHandler.setFormatter(formatter)
+
+logger = logging.getLogger()
+logger.addHandler(logHandler)
+logger.setLevel(logging.INFO)
+```
+
+### 2. 健康检查端点 | Health Check Endpoint
+
+```python
+# 已有端点：GET /health
+# 添加详细健康检查
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    checks = {
+        "database": await check_database(),
+        "redis": await check_redis(),
+        "ai_service": await check_ai_service(),
+        "storage": await check_storage(),
+    }
+    
+    all_healthy = all(checks.values())
+    
+    return {
+        "status": "healthy" if all_healthy else "unhealthy",
+        "checks": checks,
+        "timestamp": time.time(),
+    }
+```
+
+### 3. 配置 Prometheus 监控 | Configure Prometheus Monitoring
+
+```yaml
+# docker-compose.prod.yml
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+  
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+```
+
+---
+
+<a name="deployment-steps"></a>
+## 🚀 部署步骤 | Deployment Steps
+
+### 步骤 1：准备服务器 | Step 1: Prepare Server
+
+```bash
+# 更新系统
+sudo apt-get update && sudo apt-get upgrade -y
+
+# 安装 Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# 安装 Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# 安装其他工具
+sudo apt-get install -y git openssl nginx certbot python3-certbot-nginx
+```
+
+### 步骤 2：克隆代码 | Step 2: Clone Repository
+
+```bash
+cd /opt
+sudo mkdir -p medicareai
+sudo chown $USER:$USER medicareai
+cd medicareai
+git clone https://github.com/your-repo/MediCareAI.git .
+```
+
+### 步骤 3：配置环境变量 | Step 3: Configure Environment
+
+```bash
+# 生成密码和密钥
+./scripts/generate-secrets.sh
+
+# 编辑配置文件
+nano .env.production
+
+# 验证配置
+./scripts/validate-config.sh
+```
+
+### 步骤 4：修改代码配置 | Step 4: Modify Code Configuration
+
+```bash
+# 修改 CORS 配置
+nano backend/app/core/config.py
+# 修改 cors_origins 为你的域名
+
+# 修改 main.py（如果需要）
+nano backend/app/main.py
+# 确保使用 settings.cors_origins
+```
+
+### 步骤 5：构建和启动 | Step 5: Build and Start
+
+```bash
+# 使用生产配置
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# 等待服务启动
+sleep 30
+
+# 检查状态
+docker-compose ps
+docker-compose logs -f backend
+```
+
+### 步骤 6：配置 SSL | Step 6: Configure SSL
+
+```bash
+# 获取证书
+sudo certbot --nginx -d medicare.yourdomain.com -d admin.medicare.yourdomain.com
+
+# 测试自动续期
+sudo certbot renew --dry-run
+```
+
+### 步骤 7：初始化数据库 | Step 7: Initialize Database
+
+```bash
+# 运行数据库迁移
+docker-compose exec backend alembic upgrade head
+
+# 创建管理员账户
+docker-compose exec backend python scripts/create_admin.py
+```
+
+### 步骤 8：验证部署 | Step 8: Verify Deployment
+
+```bash
+# 健康检查
+curl -s https://medicare.yourdomain.com/health | jq
+
+# API 测试
+curl -s https://medicare.yourdomain.com/api/v1/ | jq
+
+# 前端访问
+# 在浏览器中打开 https://medicare.yourdomain.com
+```
+
+---
+
+<a name="verification"></a>
+## ✔️ 验证检查清单 | Verification Checklist
+
+### 功能验证 | Functional Verification
+- [ ] 用户注册和登录正常工作
+- [ ] 患者可以提交症状
+- [ ] AI 诊断功能正常
+- [ ] 医生可以查看病例
+- [ ] 管理员面板可以访问
+- [ ] 文件上传和下载正常
+
+### 安全验证 | Security Verification
+- [ ] HTTPS 正常工作（SSL Labs 评分 A+）
+- [ ] HTTP 自动重定向到 HTTPS
+- [ ] 安全响应头正确设置
+- [ ] CORS 只允许特定域名
+- [ ] 密码复杂度要求生效
+- [ ] JWT Token 正确验证
+
+### 性能验证 | Performance Verification
+- [ ] 页面加载时间 < 3 秒
+- [ ] API 响应时间 < 500ms
+- [ ] 数据库查询优化
+- [ ] 静态文件缓存生效
+- [ ] 图片和资源压缩
+
+### 监控验证 | Monitoring Verification
+- [ ] 日志正确记录
+- [ ] 错误告警正常发送
+- [ ] 健康检查端点返回 200
+- [ ] Prometheus 指标收集正常
+- [ ] Grafana 仪表板可访问
+
+---
+
+## 🆘 故障排除 | Troubleshooting
+
+### 问题 1：CORS 错误仍然存在
+**原因：** 缓存或配置未生效
+```bash
+# 重启后端服务
+docker-compose restart backend
+
+# 检查配置
+docker-compose exec backend python -c "from app.core.config import settings; print(settings.cors_origins)"
+```
+
+### 问题 2：SSL 证书错误
+**原因：** 证书路径错误或权限问题
+```bash
+# 检查证书权限
+sudo ls -la /etc/letsencrypt/live/
+
+# 重新生成证书
+sudo certbot renew --force-renewal
+```
+
+### 问题 3：数据库连接失败
+**原因：** 密码错误或网络问题
+```bash
+# 检查数据库日志
+docker-compose logs postgres
+
+# 测试连接
+docker-compose exec postgres psql -U medicare_user -d medicareai
+```
+
+---
+
+## 📚 参考文档 | References
+
+- [FastAPI CORS 文档](https://fastapi.tiangolo.com/tutorial/cors/)
+- [Let's Encrypt 文档](https://letsencrypt.org/docs/)
+- [Docker 生产环境最佳实践](https://docs.docker.com/develop/dev-best-practices/)
+- [OWASP 安全 Headers 指南](https://owasp.org/www-project-secure-headers/)
+
+---
+
+## 📝 更新日志 | Changelog
+
+### Version 1.0.0 (2026-02-25)
+- 初始版本
+- 包含从开发到生产的完整迁移指南
+- 涵盖 CORS、SSL、数据库、监控等配置
+
+---
+
+**⚠️ 最后提醒：在生产环境部署前，请务必完成本清单中的所有检查项！**
+
+**⚠️ Final Reminder: Please complete all checklist items before deploying to production!**
