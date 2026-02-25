@@ -534,7 +534,13 @@ See [`.env.example`](.env.example) for full configuration template.
 
 #### System Documentation | 系统文档
 - **[🏗️ ARCHITECTURE.mdx](docs/ARCHITECTURE.mdx)** - System architecture & design / 系统架构与设计
+- **[🏗️ ARCHITECTURE.mdx](docs/ARCHITECTURE.mdx)** - System architecture & design / 系统架构与设计
 - **[🔌 API.mdx](docs/API.mdx)** - Complete API reference / 完整 API 参考
+- **[🤖 AI_ASSISTANT.mdx](docs/AI_ASSISTANT.mdx)** - AI assistant context / AI 助手上下文
+- **[🔍 RAG_OPTIMIZATION.mdx](docs/RAG_OPTIMIZATION.mdx)** - RAG optimization implementation / RAG优化实施文档（混合检索、HyDE、上下文压缩）
+
+#### Recent Updates & Fixes | 近期更新与修复
+- **[📊 DATA_EXPORT_FIX.mdx](docs/DATA_EXPORT_FIX.mdx)** - Data export fix summary / 数据导出修复总结（第一版 - 部分修复）
 - **[🤖 AI_ASSISTANT.mdx](docs/AI_ASSISTANT.mdx)** - AI assistant context / AI 助手上下文
 
 #### Development & Maintenance | 开发与维护

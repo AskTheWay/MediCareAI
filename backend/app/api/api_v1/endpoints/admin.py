@@ -38,8 +38,10 @@ from fastapi import (
     UploadFile,
     File,
     Form,
+    BackgroundTasks,
 )
 from pydantic import BaseModel
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1667,10 +1669,12 @@ async def _test_ai_model_connection(
 @router.post("/knowledge-base/upload", response_model=KnowledgeBaseUploadResponse)
 async def upload_knowledge_base_document(
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
     request: Request = None,
 ) -> KnowledgeBaseUploadResponse:
+
     """
     Upload knowledge base document | 上传知识库文档
 
@@ -1739,10 +1743,17 @@ async def upload_knowledge_base_document(
             user_agent=request.headers.get("user-agent") if request else "unknown",
         )
 
-        # Start REAL background processing for vectorization
-        asyncio.create_task(
-            _vectorize_knowledge_document(doc_id, safe_filename, content_str, admin.id)
-        )
+# Start REAL background processing for vectorization
+        if background_tasks:
+            background_tasks.add_task(
+                _vectorize_knowledge_document, doc_id, safe_filename, content_str, admin.id
+            )
+        else:
+            # Fallback to asyncio.create_task if BackgroundTasks not available
+            asyncio.create_task(
+                _vectorize_knowledge_document(doc_id, safe_filename, content_str, admin.id)
+            )
+
 
         return KnowledgeBaseUploadResponse(
             success=True,

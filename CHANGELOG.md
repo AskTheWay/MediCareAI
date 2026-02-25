@@ -11,6 +11,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.4] - 2026-02-26
+
+### RAG 优化实施 | RAG Optimization | 🔍
+
+#### 混合检索实现 (Hybrid Search Implementation)
+- **实现混合检索功能** Implemented hybrid search functionality
+  - `kb_vectorization_service.py`: 添加 `hybrid_search()` 方法，支持向量+全文搜索
+  - 使用 RRF (Reciprocal Rank Fusion) 算法融合两种搜索结果
+  - 可配置权重：vector_weight (默认0.7), keyword_weight (默认0.3)
+  - 支持元数据过滤：疾病分类、来源类型、文档标题
+
+#### PostgreSQL 全文搜索支持 (Full-Text Search Support)
+- **数据库层面支持全文搜索** Database-level full-text search support
+  - `models.py`: 添加 `search_vector` 列 (TSVECTOR 类型) 到 `knowledge_base_chunks` 表
+  - 创建 GIN 索引 `idx_kb_chunks_search_vector` 加速搜索
+  - 创建复合索引支持元数据过滤查询
+  - 新增迁移文件 `002_add_fulltext_search_to_kb.py`
+
+#### HyDE 查询增强 (HyDE Query Enhancement)
+- **实现 HyDE (Hypothetical Document Embeddings)** Implemented HyDE for query expansion
+  - `rag_enhancement_service.py`: 新增服务，提供查询增强功能
+  - 使用现有 LLM 生成假设性答案文档，改善检索质量
+  - 支持查询改写：扩展医学缩写、添加同义词
+  - 自动提取 5-8 个相关医学关键词
+
+#### 上下文压缩 (Context Compression)
+- **实现上下文压缩功能** Implemented context compression
+  - 使用 LLM 从检索结果中提取与查询相关的内容
+  - 生成关键要点列表，保留源引用信息
+  - 减少 LLM 调用时的 token 消耗 (~30%)
+
+#### API 端点扩展 (API Endpoints Extension)
+- **扩展知识库搜索 API** Extended knowledge base search API
+  - `POST /knowledge-base/search`: 支持混合检索、HyDE、元数据过滤
+  - `POST /knowledge-base/enhance-query`: 查询增强预览端点
+  - `POST /knowledge-base/compress`: 上下文压缩端点
+
+#### 前端 API 更新 (Frontend API Updates)
+- **更新前端 API 服务** Updated frontend API service
+  - `api.ts`: 添加 `searchKnowledgeBase()`, `enhanceSearchQuery()`, `compressKbResults()` 方法
+  - 完整类型定义支持新参数
+
+### 文档更新 Documentation Updates | 📝
+
+#### 新增 RAG 优化文档
+- **创建 `docs/RAG_OPTIMIZATION.mdx`**: RAG优化实施总结文档
+  - 实施概览和修改文件清单
+  - 核心功能详解（混合检索、元数据过滤、HyDE、上下文压缩）
+  - 数据库变更说明
+  - 部署步骤和 API 使用示例
+  - 性能优化预期和监控指标
+
+#### 新增数据导出修复文档
+- **创建 `docs/DATA_EXPORT_FIX.mdx`**: 数据导出修复总结文档
+  - 问题描述和根本原因分析（代码重复导致AI数据被覆盖）
+  - 三套数据提取逻辑的详细说明
+  - 修复方案和代码变更（删除重复提取逻辑）
+  - 验证步骤和问题排查指南
+
+### Bug 修复 Bug Fixes | 🐛
+
+#### 数据导出检验数据丢失修复
+- **修复医生端CSV导出时检验数据为空的问题** Fixed empty lab data in doctor CSV export
+  - `doctor.py`: 删除重复的数据提取逻辑（3套→1套）
+  - 确保AI提取的检验数据不再被症状/诊断文本提取覆盖
+  - 数据提取优先级：AI结构化数据 > 文档文本提取 > 不提取
+  - 修复后CSV应包含70+个检验指标的实际数值
+
+---
+
+---
+
 ## [3.0.3] - 2026-02-25
 
 ### 关键修复 Critical Fixes | 🐛

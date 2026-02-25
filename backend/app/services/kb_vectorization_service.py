@@ -483,6 +483,345 @@ class KnowledgeBaseVectorizationService:
         
         return deleted_count
 
+    async def hybrid_search(
+        self,
+        query_text: str,
+        disease_category: str = None,
+        source_type: str = None,
+        document_title: str = None,
+        top_k: int = 5,
+        min_similarity: float = 0.6,
+        vector_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+        enable_hybrid: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Hybrid Search: Combine vector similarity + full-text search | 混合检索：向量相似度 + 全文搜索
+        
+        Uses Reciprocal Rank Fusion (RRF) to combine results from both methods.
+        使用倒数排序融合(RRF)算法结合两种检索方法的结果。
+        
+        Args:
+            query_text: Search query
+            disease_category: Filter by disease category
+            source_type: Filter by source type (disease_guideline, medical_document, etc.)
+            document_title: Filter by document title (partial match)
+            top_k: Number of results to return
+            min_similarity: Minimum vector similarity threshold
+            vector_weight: Weight for vector search scores (0-1)
+            keyword_weight: Weight for keyword search scores (0-1)
+            enable_hybrid: If False, only use vector search (backward compatible)
+            
+        Returns:
+            List of chunks with combined scores
+        """
+        if not enable_hybrid:
+            # Fallback to pure vector search for backward compatibility
+            return await self.search_similar_chunks(
+                query_text=query_text,
+                disease_category=disease_category,
+                top_k=top_k,
+                min_similarity=min_similarity
+            )
+        
+        logger.info(f"🔍 Starting hybrid search for: '{query_text[:50]}...' (top_k={top_k})")
+        
+        # 1. Vector Search (get more results for better fusion)
+        vector_results = await self._vector_search_with_filters(
+            query_text=query_text,
+            disease_category=disease_category,
+            source_type=source_type,
+            document_title=document_title,
+            top_k=top_k * 3,  # Get more results for fusion
+            min_similarity=min_similarity
+        )
+        
+        # 2. Full-Text Search
+        keyword_results = await self._fulltext_search_with_filters(
+            query_text=query_text,
+            disease_category=disease_category,
+            source_type=source_type,
+            document_title=document_title,
+            top_k=top_k * 3
+        )
+        
+        # 3. Reciprocal Rank Fusion (RRF)
+        fused_results = self._reciprocal_rank_fusion(
+            vector_results=vector_results,
+            keyword_results=keyword_results,
+            vector_weight=vector_weight,
+            keyword_weight=keyword_weight,
+            top_k=top_k
+        )
+        
+        logger.info(f"✅ Hybrid search complete: {len(fused_results)} results (vector: {len(vector_results)}, keyword: {len(keyword_results)})")
+        
+        # Update retrieval counts
+        for result in fused_results:
+            chunk_id = result.get('id')
+            if chunk_id:
+                # Find the chunk and update count
+                stmt = select(KnowledgeBaseChunk).where(
+                    KnowledgeBaseChunk.id == chunk_id
+                )
+                chunk_result = await self.db.execute(stmt)
+                chunk = chunk_result.scalar_one_or_none()
+                if chunk:
+                    chunk.retrieval_count += 1
+        
+        await self.db.commit()
+        
+        return fused_results
+
+    async def _vector_search_with_filters(
+        self,
+        query_text: str,
+        disease_category: str = None,
+        source_type: str = None,
+        document_title: str = None,
+        top_k: int = 15,
+        min_similarity: float = 0.6
+    ) -> List[Dict[str, Any]]:
+        """
+        Vector search with metadata filters | 带元数据过滤的向量搜索
+        """
+        # Generate query embedding
+        query_embedding = await self.vector_service.generate_embedding(query_text)
+        
+        # Build base query with filters
+        stmt = select(KnowledgeBaseChunk).where(
+            KnowledgeBaseChunk.is_active == True,
+            KnowledgeBaseChunk.embedding.isnot(None)
+        )
+        
+        # Apply metadata filters
+        if disease_category:
+            stmt = stmt.where(KnowledgeBaseChunk.disease_category == disease_category)
+        if source_type:
+            stmt = stmt.where(KnowledgeBaseChunk.source_type == source_type)
+        if document_title:
+            stmt = stmt.where(KnowledgeBaseChunk.document_title.ilike(f'%{document_title}%'))
+        
+        result = await self.db.execute(stmt)
+        chunks = result.scalars().all()
+        
+        # Calculate similarity and filter
+        scored_chunks = []
+        for chunk in chunks:
+            if chunk.embedding:
+                similarity = self._cosine_similarity(query_embedding, chunk.embedding)
+                if similarity >= min_similarity:
+                    scored_chunks.append({
+                        'id': str(chunk.id),
+                        'chunk': chunk,
+                        'score': similarity,
+                        'source': 'vector'
+                    })
+        
+        # Sort by score and take top_k
+        scored_chunks.sort(key=lambda x: x['score'], reverse=True)
+        return scored_chunks[:top_k]
+
+    async def _fulltext_search_with_filters(
+        self,
+        query_text: str,
+        disease_category: str = None,
+        source_type: str = None,
+        document_title: str = None,
+        top_k: int = 15
+    ) -> List[Dict[str, Any]]:
+        """
+        PostgreSQL full-text search with metadata filters | PostgreSQL全文搜索带元数据过滤
+        """
+        from sqlalchemy import func, desc
+        
+        # Convert query to tsquery (Chinese text search)
+        # Use plainto_tsquery for simple queries, or parse manually for complex ones
+        search_query = func.plainto_tsquery('chinese', query_text)
+        
+        # Build query with text search ranking
+        stmt = select(
+            KnowledgeBaseChunk,
+            func.ts_rank(KnowledgeBaseChunk.search_vector, search_query).label('rank')
+        ).where(
+            KnowledgeBaseChunk.is_active == True,
+            KnowledgeBaseChunk.search_vector.match(search_query)
+        )
+        
+        # Apply metadata filters
+        if disease_category:
+            stmt = stmt.where(KnowledgeBaseChunk.disease_category == disease_category)
+        if source_type:
+            stmt = stmt.where(KnowledgeBaseChunk.source_type == source_type)
+        if document_title:
+            stmt = stmt.where(KnowledgeBaseChunk.document_title.ilike(f'%{document_title}%'))
+        
+        # Order by rank and limit
+        stmt = stmt.order_by(desc('rank')).limit(top_k)
+        
+        result = await self.db.execute(stmt)
+        rows = result.all()
+        
+        scored_chunks = []
+        for chunk, rank in rows:
+            scored_chunks.append({
+                'id': str(chunk.id),
+                'chunk': chunk,
+                'score': float(rank) if rank else 0.0,
+                'source': 'keyword'
+            })
+        
+        return scored_chunks
+
+    def _reciprocal_rank_fusion(
+        self,
+        vector_results: List[Dict[str, Any]],
+        keyword_results: List[Dict[str, Any]],
+        vector_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+        top_k: int = 5,
+        k_constant: int = 60  # RRF constant
+    ) -> List[Dict[str, Any]]:
+        """
+        Reciprocal Rank Fusion (RRF) for combining search results | 倒数排序融合算法
+        
+        Formula: score = sum(weight / (k + rank))
+        公式: 得分 = 求和(权重 / (k + 排名))
+        
+        Args:
+            vector_results: Results from vector search with ranks
+            keyword_results: Results from keyword search with ranks
+            vector_weight: Weight for vector search (default 0.7)
+            keyword_weight: Weight for keyword search (default 0.3)
+            top_k: Number of final results
+            k_constant: RRF constant (typically 60)
+            
+        Returns:
+            Fused and re-ranked results
+        """
+        # Normalize weights
+        total_weight = vector_weight + keyword_weight
+        vector_weight = vector_weight / total_weight
+        keyword_weight = keyword_weight / total_weight
+        
+        # Build score dictionary: chunk_id -> fused_score
+        scores = {}
+        chunk_data = {}
+        
+        # Add vector results with rank-based scoring
+        for rank, item in enumerate(vector_results, start=1):
+            chunk_id = item['id']
+            rrf_score = vector_weight / (k_constant + rank)
+            
+            if chunk_id in scores:
+                scores[chunk_id] += rrf_score
+            else:
+                scores[chunk_id] = rrf_score
+                chunk_data[chunk_id] = item['chunk']
+        
+        # Add keyword results with rank-based scoring
+        for rank, item in enumerate(keyword_results, start=1):
+            chunk_id = item['id']
+            rrf_score = keyword_weight / (k_constant + rank)
+            
+            if chunk_id in scores:
+                scores[chunk_id] += rrf_score
+            else:
+                scores[chunk_id] = rrf_score
+                chunk_data[chunk_id] = item['chunk']
+        
+        # Sort by fused score
+        ranked_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
+        
+        # Format final results
+        results = []
+        for chunk_id in ranked_ids[:top_k]:
+            chunk = chunk_data[chunk_id]
+            results.append({
+                'id': chunk_id,
+                'text': chunk.chunk_text,
+                'section_title': chunk.section_title,
+                'document_title': chunk.document_title,
+                'disease_category': chunk.disease_category,
+                'source_type': chunk.source_type,
+                'similarity_score': scores[chunk_id],  # Fused RRF score
+                'retrieval_count': chunk.retrieval_count,
+                'fused_score': scores[chunk_id],
+                'vector_score': next((v['score'] for v in vector_results if v['id'] == chunk_id), None),
+                'keyword_score': next((k['score'] for k in keyword_results if k['id'] == chunk_id), None),
+            })
+        
+        return results
+
+    async def search_with_metadata_filters(
+        self,
+        query_text: str = None,
+        disease_category: str = None,
+        source_type: str = None,
+        document_title: str = None,
+        section_title: str = None,
+        top_k: int = 10,
+        min_similarity: float = 0.6
+    ) -> List[Dict[str, Any]]:
+        """
+        Search with comprehensive metadata filters | 综合元数据过滤搜索
+        
+        Supports filtering by:
+        - disease_category: Disease category (e.g., 'respiratory', 'cardiovascular')
+        - source_type: Source type (disease_guideline, medical_document, research_paper, unified_kb)
+        - document_title: Document title (partial match supported)
+        - section_title: Section title (partial match supported)
+        
+        If query_text is None, returns chunks matching metadata filters only (browse mode).
+        """
+        if query_text:
+            # Use hybrid search with filters
+            return await self.hybrid_search(
+                query_text=query_text,
+                disease_category=disease_category,
+                source_type=source_type,
+                document_title=document_title,
+                top_k=top_k,
+                min_similarity=min_similarity
+            )
+        else:
+            # Browse mode: filter only, no text search
+            stmt = select(KnowledgeBaseChunk).where(
+                KnowledgeBaseChunk.is_active == True
+            )
+            
+            if disease_category:
+                stmt = stmt.where(KnowledgeBaseChunk.disease_category == disease_category)
+            if source_type:
+                stmt = stmt.where(KnowledgeBaseChunk.source_type == source_type)
+            if document_title:
+                stmt = stmt.where(KnowledgeBaseChunk.document_title.ilike(f'%{document_title}%'))
+            if section_title:
+                stmt = stmt.where(KnowledgeBaseChunk.section_title.ilike(f'%{section_title}%'))
+            
+            stmt = stmt.order_by(KnowledgeBaseChunk.retrieval_count.desc())
+            stmt = stmt.limit(top_k)
+            
+            result = await self.db.execute(stmt)
+            chunks = result.scalars().all()
+            
+            return [
+                {
+                    'id': str(chunk.id),
+                    'text': chunk.chunk_text,
+                    'section_title': chunk.section_title,
+                    'document_title': chunk.document_title,
+                    'disease_category': chunk.disease_category,
+                    'source_type': chunk.source_type,
+                    'retrieval_count': chunk.retrieval_count,
+                }
+                for chunk in chunks
+            ]
+
+
+# Global service instance
+kb_vectorization_service = KnowledgeBaseVectorizationService
+
 
 # Global service instance
 kb_vectorization_service = KnowledgeBaseVectorizationService

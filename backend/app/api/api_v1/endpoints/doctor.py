@@ -41,13 +41,21 @@ from app.models.models import (
     AIFeedback,
     ChronicDisease,
     PatientChronicCondition,
+    ExtractedLabReport,
 )
+
 from app.core.deps import (
     get_current_active_user,
     require_doctor,
     require_verified_doctor,
 )
 from app.schemas.user import UserResponse
+from app.services.medical_data_extractor import (
+    medical_data_extractor,
+    extract_medical_data_for_export,
+)
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -1395,52 +1403,511 @@ async def export_cases(
         output = io.StringIO()
         if cases_with_original:
             # Define research-friendly fieldnames
+            # Define research-friendly fieldnames - 扩展版，包含更多检验指标
             fieldnames = [
-                # Basic Info
+                # Basic Info / 基本信息
                 "case_id",
                 "created_at",
-                # Demographics
+                # Demographics / 人口统计学
                 "age_range",
                 "gender",
                 "city_tier",
                 "city_environment",
-                # Symptoms
+                # Symptoms / 症状
                 "symptoms",
                 "severity",
                 "duration",
-                # Lab Tests (common indicators)
-                "wbc",
-                "rbc",
-                "hb",
-                "plt",
-                "neutrophil",
-                "lymphocyte",
-                "crp",
-                "pct",
-                "esr",
-                # Diagnosis
+                # Complete Blood Count / 血常规 (完整)
+                "wbc", "rbc", "hb", "hct", "plt",
+                "mcv", "mch", "mchc", "rdw",
+                "neutrophil", "lymphocyte", "monocyte", "eosinophil", "basophil",
+                # Biochemistry / 生化检查
+                "glucose", "hba1c",
+                "total_protein", "albumin", "globulin",
+                "alt", "ast", "alp", "ggt",
+                "tbil", "dbil", "ibil",
+                "bun", "creatinine", "ua",
+                "tg", "tc", "hdl", "ldl",
+                "k", "na", "cl", "ca", "p", "mg",
+                "amy", "lps",
+                "ck", "ckmb", "ldh",
+                "troponin", "bnp",
+                # Inflammation & Immunology / 炎症和免疫
+                "crp", "pct", "esr", "ferritin", "il6", "tnf",
+                # Coagulation / 凝血功能
+                "pt", "inr", "aptt", "tt", "fib", "d_dimer",
+                # Urinalysis / 尿液检查
+                "urine_ph", "urine_specific_gravity",
+                "urine_glucose", "urine_protein", "urine_ketone",
+                "urine_occult_blood", "urine_bilirubin",
+                "urine_urobilinogen", "urine_nitrite", "urine_leukocyte",
+                # Imaging Findings / 影像学检查 (文本描述)
+                "imaging_findings",
+                # Function Tests / 功能检查
+                "ecg_findings", "pft_findings", "echo_findings",
+                # Diagnosis / 诊断
                 "primary_diagnosis",
                 "secondary_diagnosis",
                 "diagnosis_confidence",
-                # Medications
+                # Medications / 药物
                 "current_medications",
                 "recommended_medications",
-                # Treatment
+                # Treatment / 治疗
                 "treatment_plan",
                 "follow_up_recommendations",
-                # Notes
+                # Notes / 备注
                 "allergies",
                 "special_notes",
             ]
+
 
             writer = csv.DictWriter(output, fieldnames=fieldnames)
             writer.writeheader()
 
             for shared_case, original_case in cases_with_original:
                 profile = shared_case.anonymous_patient_profile or {}
-
-                # Parse diagnosis to extract structured information
+# ============================================================
+                # 1. 收集检验数据（优先级：AI结构化数据 > 原始文本提取）
+                # ============================================================
+                
+                symptoms_text = original_case.symptoms or shared_case.anonymized_symptoms or ""
                 diagnosis_text = shared_case.anonymized_diagnosis or ""
+                
+                # 1.1 查询 AI 提取的结构化检验报告数据
+                extracted_reports_query = select(ExtractedLabReport).where(
+                    ExtractedLabReport.medical_case_id == original_case.id,
+                    ExtractedLabReport.status == "completed"
+                )
+                extracted_reports_result = await db.execute(extracted_reports_query)
+                extracted_reports = extracted_reports_result.scalars().all()
+                
+                # 合并所有提取的项目
+                ai_extracted_items = {}
+                for report in extracted_reports:
+                    for item in report.extracted_items:
+                        key = item.get("name_en") or item.get("name")
+                        if key:
+                            ai_extracted_items[key.lower()] = item
+                
+                logger.info(f"Case {original_case.id}: Found {len(extracted_reports)} AI-extracted reports with {len(ai_extracted_items)} items")
+                
+                # ============================================================
+                # 2. 提取医学数据
+                # ============================================================
+                
+                lab_values = {}
+                imaging_findings = []
+                function_tests = []
+                
+                # 优先使用 AI 提取的结构化数据
+                if ai_extracted_items:
+                    logger.info(f"Using AI-extracted data: {list(ai_extracted_items.keys())[:10]}...")
+                    for key, item in ai_extracted_items.items():
+                        lab_values[key] = {
+                            "value": item.get("value", ""),
+                            "unit": item.get("unit", ""),
+                            "name": item.get("name", key),
+                            "name_en": item.get("name_en", key),
+                        }
+                
+                # 如果没有 AI 数据，从原始文档文本中提取作为补充
+                if not lab_values or len(lab_values) < 5:
+                    logger.info(f"Insufficient AI data, extracting from text as supplement")
+                    
+                    # 收集文档文本
+                    document_texts = []
+                    docs_query = select(MedicalDocument).where(
+                        and_(
+                            MedicalDocument.medical_case_id == original_case.id,
+                            MedicalDocument.upload_status == "processed",
+                        )
+                    )
+                    docs_result = await db.execute(docs_query)
+                    documents = docs_result.scalars().all()
+                    
+                    for doc in documents:
+                        if doc.cleaned_content:
+                            text = doc.cleaned_content.get("text", "")
+                            if text:
+                                document_texts.append(text)
+                        elif doc.extracted_content:
+                            data = doc.extracted_content
+                            if data.get("markdown_content"):
+                                document_texts.append(data["markdown_content"])
+                            elif data.get("text_content"):
+                                document_texts.append(data["text_content"])
+                    
+                    all_documents_text = "\n\n".join(document_texts)
+                    
+                    combined_text = f"{all_documents_text}\n\n{diagnosis_text}\n\n{symptoms_text}".strip()
+                    
+                    if len(combined_text) > 50:
+                        extracted_data = medical_data_extractor.extract_all_medical_data(combined_text)
+                        for key, value in extracted_data.get("lab_values", {}).items():
+                            if key not in lab_values:
+                                lab_values[key] = value
+                        imaging_findings = extracted_data.get("imaging_findings", [])
+                        function_tests = extracted_data.get("function_tests", [])
+                
+                # 从诊断文本中提取诊断相关信息
+                diagnosis_data = parse_diagnosis_for_research(diagnosis_text)
+                
+                logger.info(f"Case {original_case.id}: Final extraction has {len(lab_values)} lab values")
+                # ============================================================
+                # 1. 收集所有文本数据源
+                # ============================================================
+                
+                # 1.1 症状描述
+                symptoms_text = original_case.symptoms or shared_case.anonymized_symptoms or ""
+                
+                # 1.2 AI 诊断报告
+                diagnosis_text = shared_case.anonymized_diagnosis or ""
+                
+                # 1.3 从所有关联的 MedicalDocument 中提取 MinerU 提取的原始内容
+                document_texts = []
+                
+                # 查询病例关联的所有已处理文档
+                docs_query = select(MedicalDocument).where(
+                    and_(
+                        MedicalDocument.medical_case_id == original_case.id,
+                        MedicalDocument.upload_status == "processed",
+                    )
+                )
+                docs_result = await db.execute(docs_query)
+                documents = docs_result.scalars().all()
+                
+                logger.info(f"Found {len(documents)} processed documents for case {original_case.id}")
+                
+                for doc in documents:
+                    doc_content_parts = []
+                    
+                    # 优先使用 cleaned_content (PII清理后的内容，适合分享)
+                    if doc.cleaned_content:
+                        cleaned_text = doc.cleaned_content.get("text", "")
+                        if cleaned_text:
+                            doc_content_parts.append(f"[文档: {doc.original_filename}]\n{cleaned_text}")
+                            logger.debug(f"Extracted cleaned_content from {doc.original_filename}, length: {len(cleaned_text)}")
+                    
+                    # 如果没有 cleaned_content，尝试使用 extracted_content
+                    if not doc_content_parts and doc.extracted_content:
+                        extracted_data = doc.extracted_content
+                        
+                        # 提取 markdown_content (最完整的格式)
+                        if extracted_data.get("markdown_content"):
+                            content = extracted_data["markdown_content"]
+                            doc_content_parts.append(f"[文档: {doc.original_filename}]\n{content}")
+                            logger.debug(f"Extracted markdown_content from {doc.original_filename}, length: {len(content)}")
+                        
+                        # 如果没有 markdown，尝试 text_content
+                        elif extracted_data.get("text_content"):
+                            content = extracted_data["text_content"]
+                            doc_content_parts.append(f"[文档: {doc.original_filename}]\n{content}")
+                            logger.debug(f"Extracted text_content from {doc.original_filename}, length: {len(content)}")
+                        
+                        # 尝试从 JSON content_list 中提取
+                        elif extracted_data.get("json_content"):
+                            try:
+                                content_list = json.loads(extracted_data["json_content"])
+                                if isinstance(content_list, list):
+                                    # 从 content_list 中提取所有文本
+                                    texts = []
+                                    for item in content_list:
+                                        if isinstance(item, dict):
+                                            if item.get("text"):
+                                                texts.append(item["text"])
+                                            elif item.get("content"):
+                                                texts.append(item["content"])
+                                    if texts:
+                                        content = "\n".join(texts)
+                                        doc_content_parts.append(f"[文档: {doc.original_filename}]\n{content}")
+                                        logger.debug(f"Extracted json_content from {doc.original_filename}, length: {len(content)}")
+                            except json.JSONDecodeError:
+                                logger.warning(f"Failed to parse json_content for document {doc.id}")
+                    
+                    if doc_content_parts:
+                        document_texts.extend(doc_content_parts)
+                
+                # 合并所有文档文本
+                all_documents_text = "\n\n".join(document_texts) if document_texts else ""
+                
+                # ============================================================
+                # 2. 合并所有文本进行医学数据提取
+                # ============================================================
+                
+                # 优先级：文档原始内容 > AI诊断 > 症状描述
+                # 因为文档（检验报告）通常包含最完整和准确的数值
+                combined_text_for_extraction = f"""{all_documents_text}
+
+{diagnosis_text}
+
+{symptoms_text}""".strip()
+                
+                # 提取医学数据
+                extracted_data = medical_data_extractor.extract_all_medical_data(combined_text_for_extraction)
+                lab_values = extracted_data.get("lab_values", {})
+                imaging_findings = extracted_data.get("imaging_findings", [])
+                function_tests = extracted_data.get("function_tests", [])
+                
+                # 同时从诊断文本中提取诊断相关信息（使用原有的解析器）
+                diagnosis_data = parse_diagnosis_for_research(diagnosis_text)
+                
+                logger.info(f"Case {original_case.id}: Extracted {len(lab_values)} lab values from {len(documents)} documents")
+                
+                # 记录提取到的具体指标（用于调试）
+                if lab_values:
+                    logger.debug(f"Lab values found: {list(lab_values.keys())}")
+
+                # ============================================================
+                # 3. 构建导出数据行
+                # ============================================================
+                
+                # 症状文本（截断）
+                symptoms = symptoms_text[:500] if symptoms_text else ""
+                
+                # 构建影像学发现摘要
+                imaging_summary = ""
+                if imaging_findings:
+                    imaging_parts = []
+                    for img in imaging_findings[:5]:  # 最多5个发现
+                        modality = img.get('modality', '未知')
+                        body_part = img.get('body_part', '未指定')
+                        findings = img.get('findings', '')[:100]  # 截断
+                        imaging_parts.append(f"{modality}({body_part}): {findings}")
+                    imaging_summary = "; ".join(imaging_parts)
+                
+                # 如果影像学发现为空，但文档中有提到影像检查，从文档文本中提取
+                if not imaging_summary and all_documents_text:
+                    # 尝试从文档内容中提取影像学摘要
+                    doc_imaging = medical_data_extractor.extract_imaging_findings(all_documents_text)
+                    if doc_imaging:
+                        imaging_parts = []
+                        for img in doc_imaging[:3]:
+                            imaging_parts.append(f"{img.modality}({img.body_part}): {img.findings[:100]}")
+                        imaging_summary = "; ".join(imaging_parts)
+                # 注意：lab_values 已经在上面正确提取（优先使用AI数据，文档文本补充）
+                # 这里不再重复提取，避免覆盖已获取的检验数据
+                # 如果影像学摘要为空，尝试从文档补充
+                if not imaging_summary and all_documents_text:
+                    doc_imaging = medical_data_extractor.extract_imaging_findings(all_documents_text)
+                    if doc_imaging:
+                        imaging_parts = []
+                        for img in doc_imaging[:3]:
+                            imaging_parts.append(f"{img.modality}({img.body_part}): {img.findings[:100]}")
+                        imaging_summary = "; ".join(imaging_parts)
+                
+                # 从诊断文本中提取诊断相关信息
+                diagnosis_data = parse_diagnosis_for_research(diagnosis_text)
+                
+                # 确保症状文本有值
+                if not symptoms:
+                    symptoms = symptoms_text
+                
+                # 构建功能检查摘要
+                ecg_findings = ""
+                pft_findings = ""
+                echo_findings = ""
+                for test in function_tests:
+                    if test.get('test_type') == '心电图':
+                        ecg_findings = test.get('conclusion', '')[:200]
+                    elif test.get('test_type') == '肺功能':
+                        pft_findings = test.get('conclusion', '')[:200]
+                    elif test.get('test_type') == '超声心动图':
+                        echo_findings = test.get('conclusion', '')[:200]
+                # 注意：lab_values、imaging_findings、function_tests 已在上面正确提取
+                # （优先使用AI数据，文档文本补充）
+                # 这里不再重复提取，避免覆盖已获取的检验数据
+                
+                # 如果影像学数据为空，尝试从所有文档文本中补充提取
+                if not imaging_findings and all_documents_text:
+                    imaging_findings = medical_data_extractor.extract_imaging_findings(all_documents_text)
+                
+                # 如果功能检查数据为空，尝试从所有文档文本中补充提取
+                if not function_tests and all_documents_text:
+                    function_tests = medical_data_extractor.extract_function_tests(all_documents_text)
+                
+                # 从诊断文本中提取诊断相关信息
+                diagnosis_data = parse_diagnosis_for_research(diagnosis_text)
+                
+                # 确保症状文本有值
+                if not symptoms:
+                    symptoms = symptoms_text
+                
+                # 构建影像学摘要
+                imaging_summary = ""
+                if imaging_findings:
+                    imaging_parts = []
+                    for img in imaging_findings[:5]:
+                        modality = img.get('modality', '未知') if isinstance(img, dict) else getattr(img, 'modality', '未知')
+                        body_part = img.get('body_part', '未指定') if isinstance(img, dict) else getattr(img, 'body_part', '未指定')
+                        findings = (img.get('findings', '') if isinstance(img, dict) else getattr(img, 'findings', ''))[:100]
+                        imaging_parts.append(f"{modality}({body_part}): {findings}")
+                    imaging_summary = "; ".join(imaging_parts)
+                
+                # 如果影像学摘要仍为空，尝试从文档文本直接提取
+                if not imaging_summary and all_documents_text:
+                    doc_imaging = medical_data_extractor.extract_imaging_findings(all_documents_text)
+                    if doc_imaging:
+                        imaging_parts = []
+                        for img in doc_imaging[:3]:
+                            imaging_parts.append(f"{img.modality}({img.body_part}): {img.findings[:100]}")
+                        imaging_summary = "; ".join(imaging_parts)
+                
+                # 构建功能检查摘要
+                ecg_findings = ""
+                pft_findings = ""
+                echo_findings = ""
+                for test in function_tests:
+                    test_type = test.get('test_type', '') if isinstance(test, dict) else getattr(test, 'test_type', '')
+                    conclusion = (test.get('conclusion', '') if isinstance(test, dict) else getattr(test, 'conclusion', ''))[:200]
+                    if test_type == '心电图':
+                        ecg_findings = conclusion
+                    elif test_type == '肺功能':
+                        pft_findings = conclusion
+                    elif test_type == '超声心动图':
+                        echo_findings = conclusion
+                
+                # Combine all text for extraction
+                combined_text = f"{symptoms_text}\n\n{diagnosis_text}"
+                
+                # Extract medical data using the new extractor
+                extracted_data = medical_data_extractor.extract_all_medical_data(combined_text)
+                lab_values = extracted_data.get("lab_values", {})
+                imaging_findings = extracted_data.get("imaging_findings", [])
+                function_tests = extracted_data.get("function_tests", [])
+                
+                # Also use the legacy parser for diagnosis-related fields
+                diagnosis_data = parse_diagnosis_for_research(diagnosis_text)
+
+                # Get symptoms from original case
+                symptoms = symptoms_text
+
+                # Get clinical findings if available
+                clinical_findings = original_case.clinical_findings or {}
+
+                # Build imaging summary
+                imaging_summary = "; ".join([
+                    f"{img['modality']}({img['body_part']}): {img['findings'][:100]}"
+                    for img in imaging_findings[:3]  # Limit to first 3 findings
+                ])
+                
+                # Build function test summaries
+                ecg_findings = ""
+                pft_findings = ""
+                echo_findings = ""
+                for test in function_tests:
+                    if test['test_type'] == '心电图':
+                        ecg_findings = test.get('conclusion', '')[:200]
+                    elif test['test_type'] == '肺功能':
+                        pft_findings = test.get('conclusion', '')[:200]
+                    elif test['test_type'] == '超声心动图':
+                        echo_findings = test.get('conclusion', '')[:200]
+
+                row = {
+                    "case_id": str(shared_case.id)[:8],
+                    "created_at": shared_case.created_at.isoformat() if shared_case.created_at else "",
+                    # Demographics
+                    "age_range": profile.get("age_range", ""),
+                    "gender": profile.get("gender", ""),
+                    "city_tier": profile.get("city_tier", ""),
+                    "city_environment": profile.get("city_environment", ""),
+                    # Symptoms
+                    "symptoms": symptoms[:500] if symptoms else "",
+                    "severity": original_case.severity or "",
+                    "duration": "",
+                    # Complete Blood Count / 血常规
+                    "wbc": lab_values.get("wbc", {}).get("value", ""),
+                    "rbc": lab_values.get("rbc", {}).get("value", ""),
+                    "hb": lab_values.get("hb", {}).get("value", ""),
+                    "hct": lab_values.get("hct", {}).get("value", ""),
+                    "plt": lab_values.get("plt", {}).get("value", ""),
+                    "mcv": lab_values.get("mcv", {}).get("value", ""),
+                    "mch": lab_values.get("mch", {}).get("value", ""),
+                    "mchc": lab_values.get("mchc", {}).get("value", ""),
+                    "rdw": lab_values.get("rdw", {}).get("value", ""),
+                    "neutrophil": lab_values.get("neutrophil", {}).get("value", ""),
+                    "lymphocyte": lab_values.get("lymphocyte", {}).get("value", ""),
+                    "monocyte": lab_values.get("monocyte", {}).get("value", ""),
+                    "eosinophil": lab_values.get("eosinophil", {}).get("value", ""),
+                    "basophil": lab_values.get("basophil", {}).get("value", ""),
+                    # Biochemistry / 生化
+                    "glucose": lab_values.get("glucose", {}).get("value", ""),
+                    "hba1c": lab_values.get("hba1c", {}).get("value", ""),
+                    "total_protein": lab_values.get("total_protein", {}).get("value", ""),
+                    "albumin": lab_values.get("albumin", {}).get("value", ""),
+                    "globulin": lab_values.get("globulin", {}).get("value", ""),
+                    "alt": lab_values.get("alt", {}).get("value", ""),
+                    "ast": lab_values.get("ast", {}).get("value", ""),
+                    "alp": lab_values.get("alp", {}).get("value", ""),
+                    "ggt": lab_values.get("ggt", {}).get("value", ""),
+                    "tbil": lab_values.get("tbil", {}).get("value", ""),
+                    "dbil": lab_values.get("dbil", {}).get("value", ""),
+                    "ibil": lab_values.get("ibil", {}).get("value", ""),
+                    "bun": lab_values.get("bun", {}).get("value", ""),
+                    "creatinine": lab_values.get("creatinine", {}).get("value", ""),
+                    "ua": lab_values.get("ua", {}).get("value", ""),
+                    "tg": lab_values.get("tg", {}).get("value", ""),
+                    "tc": lab_values.get("tc", {}).get("value", ""),
+                    "hdl": lab_values.get("hdl", {}).get("value", ""),
+                    "ldl": lab_values.get("ldl", {}).get("value", ""),
+                    "k": lab_values.get("k", {}).get("value", ""),
+                    "na": lab_values.get("na", {}).get("value", ""),
+                    "cl": lab_values.get("cl", {}).get("value", ""),
+                    "ca": lab_values.get("ca", {}).get("value", ""),
+                    "p": lab_values.get("p", {}).get("value", ""),
+                    "mg": lab_values.get("mg", {}).get("value", ""),
+                    "amy": lab_values.get("amy", {}).get("value", ""),
+                    "lps": lab_values.get("lps", {}).get("value", ""),
+                    "ck": lab_values.get("ck", {}).get("value", ""),
+                    "ckmb": lab_values.get("ckmb", {}).get("value", ""),
+                    "ldh": lab_values.get("ldh", {}).get("value", ""),
+                    "troponin": lab_values.get("troponin", {}).get("value", ""),
+                    "bnp": lab_values.get("bnp", {}).get("value", ""),
+                    # Inflammation / 炎症
+                    "crp": lab_values.get("crp", {}).get("value", ""),
+                    "pct": lab_values.get("pct", {}).get("value", ""),
+                    "esr": lab_values.get("esr", {}).get("value", ""),
+                    "ferritin": lab_values.get("ferritin", {}).get("value", ""),
+                    "il6": lab_values.get("il6", {}).get("value", ""),
+                    "tnf": lab_values.get("tnf", {}).get("value", ""),
+                    # Coagulation / 凝血
+                    "pt": lab_values.get("pt", {}).get("value", ""),
+                    "inr": lab_values.get("inr", {}).get("value", ""),
+                    "aptt": lab_values.get("aptt", {}).get("value", ""),
+                    "tt": lab_values.get("tt", {}).get("value", ""),
+                    "fib": lab_values.get("fib", {}).get("value", ""),
+                    "d_dimer": lab_values.get("d_dimer", {}).get("value", ""),
+                    # Urinalysis / 尿液
+                    "urine_ph": lab_values.get("urine_ph", {}).get("value", ""),
+                    "urine_specific_gravity": lab_values.get("urine_specific_gravity", {}).get("value", ""),
+                    "urine_glucose": lab_values.get("urine_glucose", {}).get("value", ""),
+                    "urine_protein": lab_values.get("urine_protein", {}).get("value", ""),
+                    "urine_ketone": lab_values.get("urine_ketone", {}).get("value", ""),
+                    "urine_occult_blood": lab_values.get("urine_occult_blood", {}).get("value", ""),
+                    "urine_bilirubin": lab_values.get("urine_bilirubin", {}).get("value", ""),
+                    "urine_urobilinogen": lab_values.get("urine_urobilinogen", {}).get("value", ""),
+                    "urine_nitrite": lab_values.get("urine_nitrite", {}).get("value", ""),
+                    "urine_leukocyte": lab_values.get("urine_leukocyte", {}).get("value", ""),
+                    # Imaging & Function / 影像和功能
+                    "imaging_findings": imaging_summary,
+                    "ecg_findings": ecg_findings,
+                    "pft_findings": pft_findings,
+                    "echo_findings": echo_findings,
+                    # Diagnosis / 诊断
+                    "primary_diagnosis": diagnosis_data.get("primary_diagnosis", ""),
+                    "secondary_diagnosis": diagnosis_data.get("secondary_diagnosis", ""),
+                    "diagnosis_confidence": diagnosis_data.get("confidence", ""),
+                    # Medications / 药物
+                    "current_medications": diagnosis_data.get("current_medications", ""),
+                    "recommended_medications": diagnosis_data.get("recommended_medications", ""),
+                    # Treatment / 治疗
+                    "treatment_plan": diagnosis_data.get("treatment_plan", ""),
+                    "follow_up_recommendations": diagnosis_data.get("follow_up", ""),
+                    # Notes / 备注
+                    "allergies": diagnosis_data.get("allergies", ""),
+                    "special_notes": diagnosis_data.get("special_notes", ""),
+                }
+                # 数据行已在上面构建完成，直接写入
+                writer.writerow(row)
                 diagnosis_data = parse_diagnosis_for_research(diagnosis_text)
 
                 # Get symptoms from original case

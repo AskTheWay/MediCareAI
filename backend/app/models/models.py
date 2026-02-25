@@ -37,7 +37,7 @@ from sqlalchemy import (
     Index,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, JSONB, INET, ARRAY, TSVECTOR
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -541,6 +541,7 @@ class MedicalCase(Base):
     shared_version = relationship(
         "SharedMedicalCase", back_populates="original_case", uselist=False
     )
+    extracted_lab_reports = relationship("ExtractedLabReport", back_populates="medical_case", cascade="all, delete-orphan")
 
 
 # =============================================================================
@@ -596,6 +597,9 @@ class MedicalDocument(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
+# Relationships
+    medical_case = relationship("MedicalCase", back_populates="medical_documents")
+    extracted_lab_reports = relationship("ExtractedLabReport", back_populates="document", cascade="all, delete-orphan")
 
     # Relationships
     medical_case = relationship("MedicalCase", back_populates="medical_documents")
@@ -1165,12 +1169,23 @@ class KnowledgeBaseChunk(Base):
     # Status
     is_active = Column(Boolean, default=True)
 
+    # Full-Text Search | 全文搜索 (PostgreSQL tsvector)
+    search_vector = Column(TSVECTOR, nullable=True, index=True, comment="Full-text search vector / 全文搜索向量")
+    is_active = Column(Boolean, default=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     disease = relationship("Disease", back_populates="knowledge_chunks")
 
     # Indexes | 索引
+    __table_args__ = (
+        Index("idx_kb_chunks_category_disease", "disease_category", "disease_id"),
+        Index("idx_kb_chunks_active", "is_active"),
+        Index("idx_kb_chunks_search_vector", "search_vector", postgresql_using='gin'),
+        Index("idx_kb_chunks_category_active", "disease_category", "is_active"),
+        Index("idx_kb_chunks_source_type", "source_type"),
+    )
     __table_args__ = (
         Index("idx_kb_chunks_category_disease", "disease_category", "disease_id"),
         Index("idx_kb_chunks_active", "is_active"),
@@ -1577,11 +1592,92 @@ __all__ = [
     "VectorEmbeddingConfig",
     "KnowledgeBaseChunk",
     "CaseKnowledgeMatch",
-    "SystemResourceLog",
-    "AIDiagnosisLog",
-    "AdminOperationLog",
-    "DoctorVerification",
-    "DoctorCaseComment",  # 医生病例评论
-    "InternalMessage",  # 站内信
-    "Patient",  # Deprecated
 ]
+
+class ExtractedLabReport(Base):
+    """
+    Extracted Lab Report Data | AI提取的检验报告结构化数据
+    
+    存储从检验报告图片中提取的结构化数据，便于后续导出和分析
+    """
+    
+    __tablename__ = "extracted_lab_reports"
+    
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        comment="唯一标识符"
+    )
+    
+    # 关联的文档和病例
+    document_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("medical_documents.id"),
+        nullable=False,
+        index=True,
+        comment="来源文档ID"
+    )
+    medical_case_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("medical_cases.id"),
+        nullable=False,
+        index=True,
+        comment="关联病例ID"
+    )
+    
+    # 报告基本信息
+    report_type = Column(
+        String(50),
+        nullable=True,
+        comment="报告类型（血常规/生化/尿常规/凝血等）"
+    )
+    
+    # 提取的检验项目（JSON格式）
+    extracted_items = Column(
+        JSONB,
+        default=list,
+        comment="提取的检验项目列表"
+    )
+    # 格式：[{"name": "白细胞", "name_en": "WBC", "value": "11.96", "unit": "×10^9/L", "reference_range": "3.5-9.5", "is_abnormal": true, "category": "blood_routine"}]
+    
+    # 患者信息（从报告中提取）
+    patient_info = Column(
+        JSONB,
+        nullable=True,
+        comment="患者信息（姓名、年龄、性别等）"
+    )
+    
+    # 报告总结
+    summary = Column(
+        Text,
+        nullable=True,
+        comment="AI生成的报告总结"
+    )
+    
+    # 提取元数据
+    extraction_metadata = Column(
+        JSONB,
+        default=dict,
+        comment="提取元数据（使用的模型、耗时、置信度等）"
+    )
+    
+    # 状态
+    status = Column(
+        Enum("pending", "completed", "failed", name="extraction_status"),
+        default="pending",
+        comment="提取状态"
+    )
+    
+    # 时间戳
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # 关系
+    document = relationship("MedicalDocument", back_populates="extracted_lab_reports")
+    medical_case = relationship("MedicalCase", back_populates="extracted_lab_reports")
+
+
+
+# Update __all__ list
+__all__.extend(["ExtractedLabReport"])

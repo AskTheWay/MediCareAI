@@ -497,6 +497,60 @@ export const adminApi = {
     preview?: string;
   }> }>('/admin/knowledge-base/documents'),
   deleteKnowledgeDocument: (docId: string) => api.delete<void>(`/admin/knowledge-base/documents/${docId}`),
+  // RAG Enhancement APIs
+  searchKnowledgeBase: (params: {
+    query: string;
+    disease_category?: string;
+    source_type?: string;
+    document_title?: string;
+    top_k?: number;
+    enable_hybrid?: boolean;
+    vector_weight?: number;
+    keyword_weight?: number;
+    use_hyde?: boolean;
+    min_similarity?: number;
+  }) => api.post<Array<{
+    id: string;
+    text: string;
+    section_title: string;
+    document_title: string;
+    disease_category: string;
+    source_type: string;
+    similarity_score: number;
+    fused_score?: number;
+    vector_score?: number;
+    keyword_score?: number;
+    retrieval_count: number;
+  }>>('/vector-embedding/knowledge-base/search', params),
+  enhanceSearchQuery: (params: {
+    query: string;
+    use_hyde?: boolean;
+    use_rewrite?: boolean;
+    context?: string;
+  }) => api.post<{
+    original_query: string;
+    rewritten_query: string;
+    final_search_query: string;
+    expanded_keywords: string[];
+    hyde_document: string | null;
+    confidence: number;
+  }>('/vector-embedding/knowledge-base/enhance-query', params),
+  compressKbResults: (params: {
+    query: string;
+    chunk_ids: string[];
+    max_tokens?: number;
+  }) => api.post<{
+    compressed_text: string;
+    key_points: string[];
+    sources: Array<{
+      document: string;
+      section: string;
+      chunk_id: string;
+    }>;
+    relevance_score: number;
+    original_chunks_count: number;
+    message: string;
+  }>('/vector-embedding/knowledge-base/compress'),
   // AI Model APIs
   getAIModels: () => api.get<AIModelConfigs>('/admin/ai-models'),
   testAIModel: (modelType: string, config?: AIModelConfig) => api.post<unknown>(`/admin/ai-models/${modelType}/test`, config || {}),
