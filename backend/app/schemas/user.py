@@ -14,6 +14,13 @@ class UserCreate(UserBase):
     date_of_birth: Optional[str] = None
     gender: Optional[str] = None
     phone: Optional[str] = None
+    address: Optional[str] = None  # 添加地址字段
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    password: str
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
 

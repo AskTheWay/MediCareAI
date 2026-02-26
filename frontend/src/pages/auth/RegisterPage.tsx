@@ -36,6 +36,7 @@ import {
 import { useForm, Controller } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../../contexts/AuthContext';
+import { CONFIG } from '../../lib/config';
 import type { RegisterData } from '../../types';
 
 const RegisterPage: React.FC = () => {
@@ -107,6 +108,10 @@ const RegisterPage: React.FC = () => {
     setSubmitError('');
 
     try {
+      // 注册前清除可能存在的旧token，防止认证混乱
+      localStorage.removeItem(CONFIG.TOKEN_KEY);
+      localStorage.removeItem(CONFIG.REFRESH_TOKEN_KEY);
+
       await registerUser(registerData);
       setSuccessMessage('注册成功！正在跳转到登录页面...');
 

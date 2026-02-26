@@ -71,20 +71,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setError(null);
       const response = await authApi.register(data);
       
-      if (!response || !response.tokens || !response.user) {
+      if (!response || !response.message) {
         throw new Error('注册响应格式错误：服务器返回数据不完整');
       }
       
-      localStorage.setItem(CONFIG.TOKEN_KEY, response.tokens.access_token);
-      localStorage.setItem(CONFIG.REFRESH_TOKEN_KEY, response.tokens.refresh_token);
-      setUser(response.user);
+      // 注册成功，不自动登录，不存储token
+      // 由调用方（RegisterPage）处理跳转
       
-      const roleRoutes: { [key: string]: string } = {
-        patient: '/patient',
-        doctor: '/doctor',
-        admin: '/admin',
-      };
-      window.location.href = roleRoutes[response.user.role] || '/';
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '注册失败');
       setError(err.message || '注册失败');

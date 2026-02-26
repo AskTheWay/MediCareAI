@@ -164,6 +164,7 @@ export const authApi = {
     
     const backendRequestData: BackendRegisterData = {
       ...baseData as BackendRegisterData,
+      address,  // 添加地址字段
     };
     
     if (emergency_contact) {

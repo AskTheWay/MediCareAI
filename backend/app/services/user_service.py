@@ -47,7 +47,30 @@ class UserService:
             logger.error(f"根据邮箱获取用户失败: {e}")
             return None
 
-    async def create_user(self, email: str, password: str, full_name: str) -> User:
+    async def create_user(self, email: str, password: str, full_name: str, address: Optional[str] = None) -> User:
+        """创建新用户"""
+        # 检查邮箱是否已存在
+        existing_user = await self.get_user_by_email(email)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱已被注册"
+            )
+
+        password_hash = get_password_hash(password)
+
+        user = User(email=email, password_hash=password_hash, full_name=full_name, address=address)
+
+        try:
+            self.db.add(user)
+            await self.db.commit()
+            await self.db.refresh(user)
+            return user
+        except Exception as e:
+            logger.error(f"创建用户失败: {e}")
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="创建用户失败"
+            )
         """创建新用户"""
         # 检查邮箱是否已存在
         existing_user = await self.get_user_by_email(email)
