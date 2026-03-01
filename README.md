@@ -48,7 +48,6 @@
 - **🏥 知识库系统** - 基于向量检索的智能知识库(RAG)，管理员可动态创建医疗指南，AI 诊断自动引用循证医学建议
 - **🔄 RAG 重排序** - 支持外部 API 重排序服务（阿里云百炼、博查等），提升检索精度 10-20%
 - **👨‍⚕️ 医生协作平台** - @医生提及系统，医患双向沟通，医生可在共享病例上添加专业评论
-- **👨‍⚕️ 医生协作平台** - @医生提及系统，医患双向沟通，医生可在共享病例上添加专业评论
 - **📨 邮件通知系统** - 医生注册审核通知、审核通过/拒绝/撤销邮件，SMTP 动态配置
 - **🏛️ 管理员系统** - 系统监控(CPU/内存/磁盘)，医生认证审核，审计日志，知识库向量化管理，邮件服务配置
 
@@ -67,7 +66,6 @@
 - **📊 Medical Records** - Case management, document attachments stored in Alibaba Cloud OSS, follow-up plans
 - **🏥 Knowledge Base** - Vector-based intelligent knowledge base (RAG), admins can dynamically create medical guidelines, AI diagnosis automatically references evidence-based recommendations
 - **🔄 RAG Reranking** - Support for external API reranking services (Bailian, Bocha, Cohere, Jina), improves retrieval accuracy by 10-20%
-- **👨‍⚕️ Doctor Collaboration Platform** - @doctor mention system, bidirectional patient-doctor communication, doctors can add professional comments on shared cases
 - **👨‍⚕️ Doctor Collaboration Platform** - @doctor mention system, bidirectional patient-doctor communication, doctors can add professional comments on shared cases
 - **📨 Email Notification System** - Doctor registration pending/approval/rejection/revocation notifications with SMTP dynamic configuration
 - **🏛️ Admin System** - System monitoring (CPU/Memory/Disk), doctor verification workflow, audit logging, knowledge base vectorization management, email service configuration
