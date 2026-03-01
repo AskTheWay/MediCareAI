@@ -17,12 +17,6 @@ class UserCreate(UserBase):
     address: Optional[str] = None  # 添加地址字段
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
-    password: str
-    date_of_birth: Optional[str] = None
-    gender: Optional[str] = None
-    phone: Optional[str] = None
-    emergency_contact_name: Optional[str] = None
-    emergency_contact_phone: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
@@ -37,6 +31,7 @@ class UserUpdate(BaseModel):
     license_number: Optional[str] = None
     display_name: Optional[str] = None
     phone: Optional[str] = None
+    address: Optional[str] = None  # 添加地址字段
 
 
 class UserResponse(UserBase):
@@ -45,7 +40,12 @@ class UserResponse(UserBase):
     is_verified: bool
     created_at: datetime
     last_login: Optional[datetime] = None
-    
+    # Patient-specific fields
+    phone: Optional[str] = None
+    address: Optional[str] = None  # 添加地址字段
+    date_of_birth: Optional[datetime] = None
+    gender: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -58,7 +58,7 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = 'bearer'
+    token_type: str = "bearer"
     expires_in: int
 
 

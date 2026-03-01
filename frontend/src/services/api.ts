@@ -562,6 +562,7 @@ export const adminApi = {
   testAIModel: (modelType: string, config?: AIModelConfig) => api.post<unknown>(`/admin/ai-models/${modelType}/test`, config || {}),
   saveAIModelConfig: (modelType: string, config: AIModelConfig) => api.post<unknown>(`/admin/ai-models/${modelType}/config`, config),
   getEmbeddingProviders: () => api.get<AIProvider[]>('/admin/embedding/providers'),
+  getRerankProviders: () => api.get<AIProvider[]>('/admin/ai-models/rerank/providers'),
   validateEmbeddingUrl: (url: string) => api.post<{
     warnings: string[];
     suggestions: string[];

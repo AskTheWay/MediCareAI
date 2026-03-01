@@ -24,6 +24,7 @@ from collections import defaultdict
 
 from app.services.vector_embedding_service import VectorEmbeddingService
 from app.services.kb_vectorization_service import KnowledgeBaseVectorizationService
+from app.services.reranking_service import RerankingService
 from app.models.models import KnowledgeBaseChunk
 import re
 
@@ -325,6 +326,7 @@ class MultiPathRAGSelector:
         self.db = db
         self.vector_service = VectorEmbeddingService(db)
         self.kb_service = KnowledgeBaseVectorizationService(db)
+        self.reranking_service = RerankingService(db)
 
     async def select_knowledge_bases(
         self,
@@ -427,6 +429,9 @@ class MultiPathRAGSelector:
         # Step 5: Re-rank based on document relevance if documents provided
         if document_texts:
             all_chunks = self._rerank_by_document_relevance(all_chunks, document_texts)
+
+        # Step 5.5: External reranking (if configured)
+        all_chunks = await self._apply_external_reranking(symptoms, all_chunks)
 
         # Step 6: Group by category and select top sources
         grouped_sources = self._group_by_category(all_chunks)
@@ -660,6 +665,75 @@ class MultiPathRAGSelector:
 
         chunks.sort(key=lambda x: x.similarity_score, reverse=True)
         return chunks
+
+    async def _apply_external_reranking(
+        self,
+        query: str,
+        chunks: List[RetrievedChunk],
+    ) -> List[RetrievedChunk]:
+        """
+        应用外部重排序服务
+        Apply external reranking service for more accurate semantic ranking
+
+        Args:
+            query: 用户查询
+            chunks: 检索到的分块列表
+
+        Returns:
+            重排序后的分块列表
+        """
+        if not chunks or len(chunks) < 2:
+            return chunks
+
+        # 将 RetrievedChunk 转换为字典格式
+        chunk_dicts = []
+        for chunk in chunks:
+            chunk_dicts.append({
+                'id': chunk.id,
+                'text': chunk.text,
+                'section_title': chunk.section_title,
+                'document_title': chunk.document_title,
+                'disease_category': chunk.disease_category,
+                'similarity_score': chunk.similarity_score,
+                'retrieval_path': chunk.retrieval_path,
+                'matched_terms': chunk.matched_terms,
+                'category_boost': chunk.category_boost
+            })
+
+        # 调用重排序服务
+        try:
+            reranked_chunks = await self.reranking_service.rerank_chunks(
+                query=query,
+                chunks=chunk_dicts,
+                top_n=len(chunk_dicts)
+            )
+
+            if not reranked_chunks:
+                logger.debug("Reranking not applied, using original chunks")
+                return chunks
+
+            # 将重排序后的字典转换回 RetrievedChunk 对象
+            result_chunks = []
+            for chunk_dict in reranked_chunks:
+                result_chunks.append(
+                    RetrievedChunk(
+                        id=chunk_dict['id'],
+                        text=chunk_dict['text'],
+                        section_title=chunk_dict.get('section_title', ''),
+                        document_title=chunk_dict.get('document_title', ''),
+                        disease_category=chunk_dict.get('disease_category', 'general'),
+                        similarity_score=chunk_dict.get('rerank_score', chunk_dict.get('similarity_score', 0)),
+                        retrieval_path=chunk_dict.get('retrieval_path', 'reranked'),
+                        matched_terms=chunk_dict.get('matched_terms', []),
+                        category_boost=chunk_dict.get('category_boost', 0.0)
+                    )
+                )
+
+            logger.info(f"External reranking applied: {len(chunks)} -> {len(result_chunks)} chunks")
+            return result_chunks
+        except Exception as e:
+            logger.warning(f"External reranking failed: {e}, using original chunks")
+            return chunks
 
     def _group_by_category(
         self, chunks: List[RetrievedChunk]

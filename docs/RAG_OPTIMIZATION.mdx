@@ -299,10 +299,9 @@ MAX_COMPRESS_TOKENS = 2000 # 上下文压缩长度 / Context compression length
 
 ### 可进一步增强（需要额外模型）| Further Enhancements (Require Additional Models)
 
-1. **Cross-Encoder重排序 / Cross-Encoder Re-ranking**: 添加 `bge-reranker-base` 模型
+1. **✅ Cross-Encoder重排序 / Cross-Encoder Re-ranking**: 已实施外部 API 重排序服务（2026-03-01），支持 阿里云百炼、博查AI、Cohere、Jina AI
 2. **BGE-M3多向量 / BGE-M3 Multi-Vector**: 替换现有embedding模型 / Replace existing embedding model
 3. **ColBERT**: Token级细粒度匹配 / Token-level fine-grained matching
-
 ### 监控指标 | Monitoring Metrics
 
 建议添加以下监控 / Recommended monitoring:

@@ -101,7 +101,9 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
         # 确保邮件配置已加载
         if temail_service.config_source == "none":
             await temail_service.load_config_from_db()
-
+        
+        # 检查邮件服务是否可用
+        if temail_service.config_source != "none":
             token = await temail_service.send_verification_email(db, user, settings.frontend_url)
             if token:
                 logger.info(f"✅ 验证邮件已发送至 {user.email}, token: {token}")

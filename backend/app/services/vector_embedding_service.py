@@ -354,6 +354,88 @@ class VectorEmbeddingService:
         batch_size = 10 if is_qwen else 100
         all_embeddings = []
         
+        import asyncio
+        from httpx import ConnectError, TimeoutException
+        
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            
+            # Retry logic for connection errors
+            max_retries = 3
+            retry_delay = 2  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        # Determine URL - for some providers, the full URL is in api_url
+                        api_endpoint = config.api_url
+                        if not api_endpoint.endswith('/embeddings') and not 'text-embedding/text-embedding' in api_endpoint:
+                            api_endpoint = f"{api_endpoint.rstrip('/')}embeddings"
+                        
+                        if is_qwen:
+                            # Qwen API format
+                            response = await client.post(
+                                api_endpoint,
+                                headers={
+                                    "Content-Type": "application/json",
+                                    "Authorization": f"Bearer {config.api_key}"
+                                },
+                                json={
+                                    "model": config.model_id or "text-embedding-v3",
+                                    "input": {
+                                        "texts": batch
+                                    }
+                                }
+                            )
+                        else:
+                            # OpenAI API format
+                            response = await client.post(
+                                api_endpoint,
+                                headers={
+                                    "Content-Type": "application/json",
+                                    "Authorization": f"Bearer {config.api_key}"
+                                },
+                                json={
+                                    "model": config.model_id,
+                                    "input": batch,
+                                    "encoding_format": "float"
+                                }
+                            )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            
+                            # Handle Qwen response format
+                            if is_qwen and 'output' in result and 'embeddings' in result['output']:
+                                batch_embeddings = [item['embedding'] for item in result['output']['embeddings']]
+                                all_embeddings.extend(batch_embeddings)
+                            # Handle OpenAI response format
+                            elif 'data' in result:
+                                batch_embeddings = [item['embedding'] for item in result['data']]
+                                all_embeddings.extend(batch_embeddings)
+                            else:
+                                raise ValueError(f"Invalid response format from embedding API: {result}")
+                            
+                            # Success, break retry loop
+                            break
+                        else:
+                            raise Exception(f"Embedding API error: {response.status_code} - {response.text}")
+                
+                except (ConnectError, TimeoutException) as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Embedding API connection error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        logger.error(f"Embedding API connection failed after {max_retries} attempts: {e}")
+                        raise
+                except Exception as e:
+                    # Don't retry on other errors
+                    raise
+        
+        return all_embeddings
+        all_embeddings = []
+        
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
             

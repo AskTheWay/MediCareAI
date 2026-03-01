@@ -1109,6 +1109,33 @@ async def get_ai_models(
     diagnosis_status = await get_model_status("diagnosis")
     mineru_status = await get_model_status("mineru")
     embedding_status = await get_model_status("embedding")
+    rerank_status = await get_model_status("rerank")
+
+    # Get OSS status from dynamic config
+    from app.services.dynamic_config_service import DynamicConfigService
+
+    oss_config = await DynamicConfigService.get_oss_config(db)
+    oss_status = AIModelStatus(
+        model_type="oss",
+        api_url=oss_config.get("endpoint", ""),
+        model_id=oss_config.get("bucket", ""),
+        enabled=bool(
+            oss_config.get("access_key_id") and oss_config.get("access_key_secret")
+        ),
+        test_status="success" if oss_config.get("source") != "none" else None,
+    )
+
+    return AIModelsResponse(
+        diagnosis_llm=diagnosis_status,
+        mineru=mineru_status,
+        embedding=embedding_status,
+        rerank=rerank_status,
+        oss=oss_status,
+        timestamp=datetime.utcnow(),
+    )
+    diagnosis_status = await get_model_status("diagnosis")
+    mineru_status = await get_model_status("mineru")
+    embedding_status = await get_model_status("embedding")
 
     # Get OSS status from dynamic config
     from app.services.dynamic_config_service import DynamicConfigService
@@ -1148,7 +1175,7 @@ async def configure_ai_model(
     使用适当的安全性更新特定AI模型类型的配置。
     """
     # Validate model type
-    valid_types = ["diagnosis", "mineru", "embedding", "oss"]
+    valid_types = ["diagnosis", "mineru", "embedding", "oss", "rerank"]
     if model_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1161,7 +1188,7 @@ async def configure_ai_model(
 
     # Validate API key format
     # Note: 'diagnosis' uses 'generic' to support local LLM deployments (vLLM, Ollama, etc.)
-    key_type_map = {"diagnosis": "generic", "mineru": "mineru", "embedding": "qwen"}
+    key_type_map = {"diagnosis": "generic", "mineru": "mineru", "embedding": "qwen", "rerank": "generic"}
 
     if not validate_api_key_format(
         config.api_key, key_type_map.get(model_type, "openai")
@@ -1188,6 +1215,7 @@ async def configure_ai_model(
         "diagnosis": "诊断AI模型",
         "mineru": "文档提取 (MinerU)",
         "embedding": "向量嵌入模型",
+        "rerank": "重排序模型 (Rerank)",
     }
 
     # Extract provider from config or use 'custom' as default
@@ -1410,7 +1438,7 @@ async def test_ai_model(
     优先测试数据库中的配置，如果不存在则测试环境变量配置。
     """
     # Validate model type
-    valid_types = ["diagnosis", "mineru", "embedding", "oss"]
+    valid_types = ["diagnosis", "mineru", "embedding", "oss", "rerank"]
     if model_type not in valid_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1457,6 +1485,7 @@ async def test_ai_model(
             "diagnosis": "诊断AI模型",
             "mineru": "文档提取 (MinerU)",
             "embedding": "向量嵌入模型",
+        "rerank": "重排序模型 (Rerank)",
         }
         await config_service.save_config(
             model_type=model_type,
@@ -1700,6 +1729,70 @@ async def _test_ai_model_connection(
                             "error_message": f"HTTP {status_code}: {response_data.get('error', 'Unknown error')}",
                         }
 
+            elif model_type == "rerank":
+                # Test rerank API using the reranking service
+                from app.services.reranking_provider_adapter import get_rerank_adapter
+                
+                try:
+                    # Get provider from config metadata
+                    provider = config.provider if hasattr(config, 'provider') and config.provider else "custom"
+                    
+                    # Create adapter and test
+                    adapter = get_rerank_adapter(
+                        provider=provider,
+                        api_url=config.api_url,
+                        api_key=config.api_key,
+                        model_id=config.model_id
+                    )
+                    
+                    # Test with simple rerank request
+                    test_url = adapter.get_rerank_url()
+                    headers = adapter.get_headers()
+                    body = adapter.format_request_body(
+                        query="测试查询",
+                        documents=["测试文档1", "测试文档2", "测试文档3"],
+                        top_n=2
+                    )
+                    
+                    async with session.post(
+                        test_url,
+                        headers=headers,
+                        json=body,
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as response:
+                        status_code = response.status
+                        
+                        if status_code == 200:
+                            return {
+                                "success": True,
+                                "latency_ms": (asyncio.get_event_loop().time() - start_time) * 1000,
+                                "status_code": status_code,
+                                "response_summary": "Rerank API responded successfully",
+                            }
+                        else:
+                            try:
+                                response_text = await response.text()
+                                try:
+                                    response_data = json.loads(response_text)
+                                    error_msg = response_data.get('error', response_data.get('message', 'Unknown error'))
+                                except json.JSONDecodeError:
+                                    error_msg = response_text[:200] if response_text else f"HTTP {status_code}"
+                            except Exception:
+                                error_msg = f"HTTP {status_code}"
+                            
+                            return {
+                                "success": False,
+                                "latency_ms": (asyncio.get_event_loop().time() - start_time) * 1000,
+                                "status_code": status_code,
+                                "error_message": f"HTTP {status_code}: {error_msg}",
+                            }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "latency_ms": (asyncio.get_event_loop().time() - start_time) * 1000,
+                        "error_message": f"Rerank test failed: {str(e)}",
+                    }
+
     except asyncio.TimeoutError:
         return {
             "success": False,
@@ -1760,7 +1853,10 @@ async def upload_knowledge_base_document(
         # Read content
         content = await file.read()
         content_str = content.decode("utf-8")
-
+        
+        # Sanitize content to remove null bytes that PostgreSQL doesn't support
+        content_str = content_str.replace('\x00', '')
+        
         # Save file to unified directory
         async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
             await f.write(content_str)
@@ -3657,4 +3753,42 @@ async def download_license_document_by_index(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to download license document: {str(e)}",
+        )
+
+
+# =============================================================================
+# Rerank Provider APIs | 重排序模型提供商 API
+# =============================================================================
+
+@router.get("/ai-models/rerank/providers", response_model=List[Dict[str, Any]])
+async def get_rerank_providers(
+    admin: User = Depends(require_admin),
+) -> List[Dict[str, Any]]:
+    """
+    Get list of supported reranking providers | 获取支持的重排序模型提供商列表
+
+    Returns all supported reranking providers with their default configurations.
+    返回所有支持的重排序模型提供商及其默认配置。
+    """
+    from app.services.reranking_provider_adapter import get_all_rerank_providers
+
+    try:
+        providers = get_all_rerank_providers()
+        # Convert dict to list format expected by frontend
+        result = []
+        for key, provider in providers.items():
+            result.append({
+                "key": key,
+                "name": provider["name"],
+                "name_zh": provider["name_zh"],
+                "default_url": provider["default_url"],
+                "default_model": provider["default_model"],
+                "requires_key": provider["requires_key"],
+            })
+        return result
+    except Exception as e:
+        logger.error(f"Failed to get rerank providers: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get rerank providers: {str(e)}",
         )

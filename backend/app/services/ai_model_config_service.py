@@ -142,6 +142,11 @@ class AIModelConfigService:
                     "EMBEDDING_API_URL": api_url,
                     "EMBEDDING_API_KEY": api_key,
                     "EMBEDDING_MODEL_ID": model_id
+                },
+                "rerank": {
+                    "RERANK_API_URL": api_url,
+                    "RERANK_API_KEY": api_key,
+                    "RERANK_MODEL_ID": model_id
                 }
             }
             
@@ -388,6 +393,12 @@ class AIModelConfigService:
                     "api_key": os.getenv("EMBEDDING_API_KEY", ""),
                     "model_id": os.getenv("EMBEDDING_MODEL_ID", ""),
                     "model_name": "向量嵌入模型"
+                },
+                "rerank": {
+                    "api_url": os.getenv("RERANK_API_URL", ""),
+                    "api_key": os.getenv("RERANK_API_KEY", ""),
+                    "model_id": os.getenv("RERANK_MODEL_ID", ""),
+                    "model_name": "重排序模型 (Rerank)"
                 }
             }
             

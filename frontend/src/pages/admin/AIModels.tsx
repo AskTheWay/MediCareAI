@@ -36,6 +36,7 @@ import {
   Cloud as CloudIcon,
   PlayArrow as TestIcon,
   AccessTime as AccessTimeIcon,
+  Sort as SortIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { AIProvider } from '../../types';
@@ -70,6 +71,7 @@ const AIModels: React.FC = () => {
     severity: 'success' as 'success' | 'error' | 'warning' | 'info',
   });
   const [embeddingProviders, setEmbeddingProviders] = useState<AIProvider[]>([]);
+  const [rerankProviders, setRerankProviders] = useState<AIProvider[]>([]);
   const [urlValidation, setUrlValidation] = useState<string>('');
   
   // 表单数据
@@ -85,6 +87,7 @@ const AIModels: React.FC = () => {
     oss_access_key_id: '',
     oss_access_key_secret: '',
     embedding_provider: '',
+    rerank_provider: '',
   });
 
   // AI 提供商配置
@@ -161,6 +164,7 @@ const AIModels: React.FC = () => {
     { key: 'mineru', name: '文档提取 (MinerU)', icon: <DocIcon /> },
     { key: 'embedding', name: '向量嵌入模型', icon: <StorageIcon /> },
     { key: 'oss', name: '阿里云OSS存储', icon: <CloudIcon /> },
+    { key: 'rerank', name: '重排序模型 (Rerank)', icon: <SortIcon /> },
   ];
 
   const loadEmbeddingProviders = useCallback(async () => {
@@ -169,6 +173,15 @@ const AIModels: React.FC = () => {
       setEmbeddingProviders(providers);
     } catch (error) {
       console.error('Failed to load embedding providers:', error);
+    }
+  }, []);
+
+  const loadRerankProviders = useCallback(async () => {
+    try {
+      const providers = await adminApi.getRerankProviders();
+      setRerankProviders(providers);
+    } catch (error) {
+      console.error('Failed to load rerank providers:', error);
     }
   }, []);
 
@@ -181,6 +194,7 @@ const AIModels: React.FC = () => {
         mineru: data.mineru || {},
         embedding: data.embedding || {},
         oss: data.oss || {},
+        rerank: data.rerank || {},
       });
     } catch (error) {
       console.error('Failed to fetch models:', error);
@@ -198,7 +212,8 @@ const AIModels: React.FC = () => {
   useEffect(() => {
     fetchModels();
     loadEmbeddingProviders();
-  }, [fetchModels, loadEmbeddingProviders]);
+    loadRerankProviders();
+  }, [fetchModels, loadEmbeddingProviders, loadRerankProviders]);
 
   const handleOpenConfigDialog = (modelType: string = '') => {
     setEditingModelType(modelType);
@@ -214,6 +229,7 @@ const AIModels: React.FC = () => {
       oss_access_key_id: '',
       oss_access_key_secret: '',
       embedding_provider: '',
+      rerank_provider: '',
     });
     
     if (modelType && models[modelType]) {
@@ -230,6 +246,7 @@ const AIModels: React.FC = () => {
         oss_access_key_id: model.access_key_id || '',
         oss_access_key_secret: '', // 不回填密码
         embedding_provider: model.provider || '',
+        rerank_provider: model.provider || '',
       });
     }
     
@@ -260,6 +277,24 @@ const AIModels: React.FC = () => {
       setFormData({
         ...formData,
         embedding_provider: providerKey,
+        api_url: provider.default_url,
+        model_id: provider.default_model,
+      });
+      
+      setSnackbar({
+        open: true,
+        message: `已自动填充 ${provider.name_zh} 的默认配置`,
+        severity: 'success',
+      });
+    }
+  };
+
+  const handleRerankProviderChange = async (providerKey: string) => {
+    const provider = rerankProviders.find(p => p.key === providerKey);
+    if (provider) {
+      setFormData({
+        ...formData,
+        rerank_provider: providerKey,
         api_url: provider.default_url,
         model_id: provider.default_model,
       });
@@ -365,6 +400,10 @@ const AIModels: React.FC = () => {
         if (formData.model_type === 'embedding') {
           requestBody.provider = formData.embedding_provider;
         }
+        
+        if (formData.model_type === 'rerank') {
+          requestBody.provider = formData.rerank_provider;
+        }
       }
       
       const result = await adminApi.testAIModel(formData.model_type, requestBody);
@@ -443,6 +482,10 @@ const AIModels: React.FC = () => {
         
         if (formData.model_type === 'embedding' && formData.embedding_provider) {
           requestBody.provider = formData.embedding_provider;
+        }
+        
+        if (formData.model_type === 'rerank' && formData.rerank_provider) {
+          requestBody.provider = formData.rerank_provider;
         }
       }
       
@@ -691,6 +734,7 @@ const AIModels: React.FC = () => {
                   <MenuItem value="mineru">文档提取 (MinerU)</MenuItem>
                   <MenuItem value="embedding">向量嵌入 (Embedding)</MenuItem>
                   <MenuItem value="oss">阿里云OSS存储</MenuItem>
+                  <MenuItem value="rerank">重排序模型 (Rerank)</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -725,6 +769,26 @@ const AIModels: React.FC = () => {
                   >
                     <MenuItem value="">-- 选择提供商 --</MenuItem>
                     {embeddingProviders.map((provider) => (
+                      <MenuItem key={provider.key} value={provider.key}>
+                        {provider.name_zh} ({provider.name})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+            
+            {formData.model_type === 'rerank' && (
+              <Grid item xs={12}>
+                <FormControl fullWidth variant="outlined">
+                  <InputLabel>重排序模型提供商</InputLabel>
+                  <Select
+                    value={formData.rerank_provider}
+                    onChange={(e) => handleRerankProviderChange(e.target.value)}
+                    label="重排序模型提供商"
+                  >
+                    <MenuItem value="">-- 选择提供商 --</MenuItem>
+                    {rerankProviders.map((provider) => (
                       <MenuItem key={provider.key} value={provider.key}>
                         {provider.name_zh} ({provider.name})
                       </MenuItem>

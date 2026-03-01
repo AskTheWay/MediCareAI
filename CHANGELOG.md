@@ -9,7 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
----
+TZ|---
+SV|---
+BY|
+KN|## [3.0.6] - 2026-03-01
+VP|
+HV|### RAG 重排序系统 | RAG Reranking System | 🔄
+XK|
+ZP|#### 重排序服务实现 (Reranking Service Implementation)
+TH|- **实现外部 API 重排序服务** Implemented external API reranking service
+VS|  - `reranking_service.py`: 核心重排序服务，支持缓存和配置管理
+ZJ|  - `reranking_provider_adapter.py`: 提供商适配器，支持 阿里云百炼、博查、Cohere、Jina
+PP|  - 集成到 `MultiPathRAGSelector` Step 5.5，在 RRF 融合后应用重排序
+NH|  - 支持 Top-20 块重排序，控制 API 调用成本
+VQ|
+XM|#### 多提供商支持 (Multi-Provider Support)
+WY|- **支持多种重排序 API 提供商** Support multiple reranking API providers
+TQ|  - **阿里云百炼 (Bailian)**: gte-rerank 模型，国内稳定
+YB|  - **博查 AI (Bocha)**: bocha-rerank-v1 模型，国内服务商
+HS|  - **Cohere**: rerank-multilingual-v2.0，国际知名
+HW|  - **Jina AI**: jina-reranker-v2，高性能长文本支持
+ZP|  - **自定义 (Custom)**: 支持私有部署和其他 API
+MV|
+NR|#### 管理端配置 (Admin Configuration)
+ZX|- **管理员界面配置** Admin UI Configuration
+QT|  - `AIModels.tsx`: 添加 "重排序模型 (Rerank)" 配置卡片
+ZP|  - 选择提供商后自动填充默认 URL 和模型 ID
+WJ|  - 支持一键测试 API 连通性
+PP|  - 配置存储在数据库 `ai_model_configurations` 表
+NH|  - **无硬编码**: 所有配置通过管理界面完成
+VQ|
+TH|#### 性能优化 (Performance Optimizations)
+MY|- **性能优化措施** Performance optimizations
+VK|  - **缓存机制**: 重排序结果缓存 5 分钟，减少重复调用
+RW|  - **超时控制**: 30 秒 API 调用超时，防止阻塞
+ZZ|  - **优雅降级**: 重排序失败时自动回退到原始 RRF 排序
+MY|  - **批量处理**: Top-20 块重排序，控制 API 成本
+ZP|
+MS|#### Bug 修复 Bug Fixes | 🐛
+ZJ|- **修复患者注册验证邮件发送问题** Fixed patient registration verification email
+VS|  - 修复 `auth.py` 中倒置的邮件发送逻辑
+HX|  - 当邮件服务已配置时正确发送验证邮件
+ZP|  - 添加正确的配置检查逻辑
+ZP|
+MS|### 新增文件 Added Files
+ZJ|- `backend/app/services/reranking_service.py` - 重排序服务核心
+VS|  - `backend/app/services/reranking_provider_adapter.py` - 提供商适配器
+HX|  - `docs/RAG_ARCHITECTURE_MEMO.mdx` - RAG 架构技术备忘录
+ZP|
+MS|### 变更 Changed
+ZJ|- `backend/app/services/multi_path_rag_selector.py` - 集成重排序到 RAG 流程
+VS|  - `backend/app/services/ai_model_config_service.py` - 添加 rerank 配置映射
+HX|  - `backend/app/api/api_v1/endpoints/admin.py` - 添加重排序配置 API
+ZP|  - `frontend/src/pages/admin/AIModels.tsx` - 添加重排序配置 UI
+MY|  - `backend/app/api/api_v1/endpoints/auth.py` - 修复邮件发送逻辑
+ZP|
+NB|## [3.0.5] - 2026-02-28
 ---
 
 ## [3.0.5] - 2026-02-28

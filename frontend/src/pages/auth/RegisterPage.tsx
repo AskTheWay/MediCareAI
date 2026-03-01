@@ -108,6 +108,10 @@ const RegisterPage: React.FC = () => {
       fullAddress = address;
     }
 
+    // 添加地址到注册数据
+    if (fullAddress) {
+      registerData.address = fullAddress;
+    }
     if (data.role === 'patient' && emergency_contact_name && emergency_contact_phone) {
       registerData.emergency_contact = `${emergency_contact_name} (${emergency_contact_phone})`;
     }

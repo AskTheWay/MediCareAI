@@ -121,6 +121,13 @@ class AIModelConfig(BaseModel):
     api_key: str
     model_id: str
     enabled: bool = True
+    provider: Optional[str] = "custom"
+    """AI model configuration | AI模型配置"""
+
+    api_url: str
+    api_key: str
+    model_id: str
+    enabled: bool = True
 
 
 class AIModelStatus(BaseModel):
@@ -137,6 +144,14 @@ class AIModelStatus(BaseModel):
 
 
 class AIModelsResponse(BaseModel):
+    """AI models response | AI模型列表响应"""
+
+    diagnosis_llm: AIModelStatus
+    mineru: AIModelStatus
+    embedding: AIModelStatus
+    rerank: Optional[AIModelStatus] = None
+    oss: Optional[AIModelStatus] = None
+    timestamp: datetime
     """AI models response | AI模型列表响应"""
 
     diagnosis_llm: AIModelStatus

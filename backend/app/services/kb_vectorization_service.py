@@ -27,7 +27,24 @@ from app.models.models import KnowledgeBaseChunk, Disease
 from app.services.vector_embedding_service import VectorEmbeddingService
 import uuid
 from datetime import datetime
+import uuid
+from datetime import datetime
 
+def sanitize_text_for_postgres(text: str) -> str:
+    """
+    清理文本，移除PostgreSQL不支持的字符（如空字节）
+    Sanitize text by removing characters not supported by PostgreSQL (e.g., null bytes)
+    """
+    if not text:
+        return text
+    # Remove null bytes and other control characters that PostgreSQL doesn't support
+    # PostgreSQL TEXT type doesn't support '\x00' (null character)
+    sanitized = text.replace('\x00', '')
+    # Also remove other problematic control characters if needed
+    # Keep only valid Unicode characters
+    return sanitized
+
+logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 
@@ -209,7 +226,11 @@ class KnowledgeBaseVectorizationService:
             logger.warning(f"Failed to delete existing chunks: {e}")
             await self.db.rollback()
         
+        # Sanitize document content to remove null bytes and other problematic characters
+        document_content = sanitize_text_for_postgres(document_content)
+        
         # Extract sections from markdown
+        sections = self._extract_markdown_sections(document_content)
         sections = self._extract_markdown_sections(document_content)
         
         all_chunks = []
@@ -244,7 +265,7 @@ class KnowledgeBaseVectorizationService:
                     document_title=document_title,
                     section_title=section_title,
                     chunk_index=i,
-                    chunk_text=chunk_text,
+                    chunk_text=sanitize_text_for_postgres(chunk_text),
                     chunk_text_hash=text_hash,
                     is_active=True,
                     created_at=datetime.utcnow()
