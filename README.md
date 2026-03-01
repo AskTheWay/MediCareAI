@@ -35,7 +35,7 @@
 <a name="overview-zh"></a>
 ## 📖 项目概述 (中文) | Project Overview
 
-|**MediCareAI** 是一个基于人工智能的智能疾病管理系统，专为患者随访和疾病追踪设计。系统整合了医疗指南、AI 智能诊断、文档处理功能和完整的邮件通知系统，为医疗机构提供全面的健康支持。
+**MediCareAI** 是一个基于人工智能的智能疾病管理系统，专为患者随访和疾病追踪设计。系统整合了医疗指南、AI 智能诊断、文档处理功能和完整的邮件通知系统，为医疗机构提供全面的健康支持。
 
 ### 🎯 核心功能
 
@@ -54,7 +54,7 @@
 <a name="overview-en"></a>
 ## 📖 Project Overview (English)
 
-|**MediCareAI** is an intelligent disease management system powered by AI, designed for patient follow-up and disease tracking. It combines medical guidelines, AI-powered diagnosis, document processing, and comprehensive email notification system to provide comprehensive healthcare support.
+**MediCareAI** is an intelligent disease management system powered by AI, designed for patient follow-up and disease tracking. It combines medical guidelines, AI-powered diagnosis, document processing, and comprehensive email notification system to provide comprehensive healthcare support.
 
 ### 🎯 Core Features
 
