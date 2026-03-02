@@ -786,6 +786,7 @@ copies or substantial portions of the Software.
 <p align="center">
   <sub>微信扫码支持 | Scan with WeChat to support</sub>
 </p>
+
 ---
 <p align="center">
   <b>MediCareAI</b> - Empowering Healthcare with AI / 用 AI 赋能医疗健康
