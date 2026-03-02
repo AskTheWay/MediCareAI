@@ -13,6 +13,7 @@ from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
@@ -48,6 +49,14 @@ app.add_middleware(
     allowed_hosts=[
         "*"
     ],  # In production, specify actual domains / 生产环境应指定实际域名
+)
+
+# Add ProxyHeadersMiddleware to trust X-Forwarded-* headers from Nginx
+app.add_middleware(
+    ProxyHeadersMiddleware,
+    trusted_hosts=[
+        "*"
+    ],  # In production, specify Nginx container IP / 生产环境应指定 Nginx 容器 IP
 )
 
 # Add Prometheus monitoring middleware
