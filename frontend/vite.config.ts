@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    allowedHosts: ['all', 'medicare_frontend', 'openmedicareai.life', 'localhost', '8.137.177.147'],
+    hmr: false,  // 生产环境禁用 HMR
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

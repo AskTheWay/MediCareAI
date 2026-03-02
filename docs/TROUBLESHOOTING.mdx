@@ -297,3 +297,374 @@ For SELinux-enabled systems (Fedora, RHEL, CentOS), see:
 **最后更新 | Last Updated**: 2026-02-16  
 **版本 | Version**: v2.0.3  
 **维护者 | Maintainer**: 苏业钦 (Su Yeqin)
+
+
+---
+
+## 🚀 Deployment Troubleshooting (2026-03-02) | 部署故障排除
+
+### Issue 1: Vite 403 Forbidden - Host Not Allowed | Vite 403 错误 - 主机不允许
+
+**Symptoms | 现象**:
+```
+Blocked request. This host ("medicare_frontend") is not allowed.
+To allow this host, add "medicare_frontend" to `server.allowedHosts`
+```
+
+**Diagnosis | 诊断**:
+- Vite 6.x introduced stricter `allowedHosts` security
+- Nginx uses Docker container name as hostname
+- Container hostname not in allowed list
+
+**Quick Fix | 快速修复**:
+
+1. Edit `frontend/vite.config.ts`:
+```typescript
+export default defineConfig({
+  server: {
+    allowedHosts: ['all', 'medicare_frontend', 'your-domain.com'],
+    // ...
+  },
+})
+```
+
+2. Restart frontend container:
+```bash
+docker compose restart frontend
+```
+
+**Permanent Solution | 永久解决方案**:
+Use explicit domains in production instead of `'all'`:
+```typescript
+allowedHosts: [
+  'medicare_frontend',
+  process.env.VITE_DOMAIN || 'localhost'
+]
+```
+
+---
+
+### Issue 2: API Requests Failing - localhost:8000 Not Accessible | API 请求失败 - localhost:8000 无法访问
+
+**Symptoms | 现象**:
+- Frontend shows "Network Error"
+- Browser console shows requests to `http://localhost:8000`
+- API calls timeout or fail with CORS errors
+
+**Diagnosis | 诊断**:
+- `API_BASE` is hardcoded to `http://localhost:8000`
+- Production containers cannot access each other's localhost
+- Requests need to go through Nginx proxy
+
+**Quick Fix | 快速修复**:
+
+1. Edit `frontend/src/lib/config.ts`:
+```typescript
+export const CONFIG = {
+  API_BASE: '',  // Use relative path
+  API_VERSION: '/api/v1',
+  // ...
+}
+```
+
+2. Rebuild and restart:
+```bash
+docker compose build frontend
+docker compose up -d frontend
+```
+
+**Verification | 验证**:
+```bash
+# Check network requests in browser DevTools
+# Should see requests to `/api/v1/...` not `http://localhost:8000`
+```
+
+---
+
+### Issue 3: Vite HMR WebSocket Connection Failed | Vite HMR WebSocket 连接失败
+
+**Symptoms | 现象**:
+```
+WebSocket connection to 'wss://your-domain.com/?token=xxx' failed
+[vite] failed to connect to websocket.
+```
+
+**Diagnosis | 诊断**:
+- Vite tries to establish WebSocket for Hot Module Replacement
+- Production environment doesn't need HMR
+- WebSocket configuration incorrect
+
+**Quick Fix | 快速修复**:
+
+Edit `frontend/vite.config.ts`:
+```typescript
+export default defineConfig({
+  server: {
+    hmr: false,  // Disable HMR in production
+    // ...
+  },
+})
+```
+
+Restart frontend:
+```bash
+docker compose restart frontend
+```
+
+**Alternative | 替代方案** (if HMR needed):
+```typescript
+hmr: {
+  host: 'your-domain.com',
+  port: 443,
+  protocol: 'wss',
+}
+```
+
+---
+
+### Issue 4: SSL Certificate Permission Denied | SSL 证书权限被拒绝
+
+**Symptoms | 现象**:
+```
+nginx: [emerg] cannot load certificate "/etc/nginx/ssl/cert.pem": 
+BIO_new_file() failed (SSL: error:80000002:system library::No such file)
+```
+
+**Diagnosis | 诊断**:
+- SSL certificates copied as root user
+- Nginx container cannot read certificate files
+- File permissions incorrect
+
+**Quick Fix | 快速修复**:
+
+```bash
+# Fix SSL certificate permissions
+sudo chown $USER:$USER docker/nginx/ssl/*
+chmod 644 docker/nginx/ssl/cert.pem
+chmod 600 docker/nginx/ssl/key.pem
+
+# Restart nginx
+docker compose restart nginx
+```
+
+**Automated Fix Script | 自动修复脚本**:
+
+```bash
+#!/bin/bash
+# fix-ssl-permissions.sh
+
+CERT_DIR="docker/nginx/ssl"
+
+if [ -f "$CERT_DIR/cert.pem" ] && [ -f "$CERT_DIR/key.pem" ]; then
+    echo "Fixing SSL certificate permissions..."
+    sudo chown "$USER:$USER" "$CERT_DIR"/*
+    chmod 644 "$CERT_DIR/cert.pem"
+    chmod 600 "$CERT_DIR/key.pem"
+    echo "✅ Permissions fixed"
+    ls -la "$CERT_DIR/"
+else
+    echo "❌ Certificate files not found in $CERT_DIR"
+    exit 1
+fi
+```
+
+---
+
+### Issue 5: Admin Login - "Access Denied" Error | 管理员登录 - "访问被拒绝" 错误
+
+**Symptoms | 现象**:
+```json
+{
+  "detail": "Access denied. admin accounts can only login through admin platform(s)."
+}
+```
+
+**Diagnosis | 诊断**:
+- Backend requires `platform` parameter in login request
+- Frontend not sending platform specification
+- Admin users restricted to admin platform only
+
+**Quick Fix | 快速修复**:
+
+Verify frontend sends platform parameter:
+
+```typescript
+// AdminLoginPage.tsx
+const onSubmit = async (data) => {
+  await login({
+    email: data.email,
+    password: data.password,
+    platform: 'admin',  // REQUIRED
+  });
+};
+```
+
+**API Test | API 测试**:
+```bash
+# Test admin login
+curl -X POST https://your-domain.com/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@medicare.ai",
+    "password": "admin123456",
+    "platform": "admin"
+  }'
+```
+
+**Response Should Include | 响应应包含**:
+```json
+{
+  "user": { "role": "admin", ... },
+  "tokens": { "access_token": "..." },
+  "platform": "admin"
+}
+```
+
+---
+
+### Issue 6: HTTPS Ports 8443/8444 Not Accessible | HTTPS 端口 8443/8444 无法访问
+
+**Symptoms | 现象**:
+- Patient platform (443) works fine
+- Doctor (8443) and Admin (8444) platforms timeout
+- Connection refused or timeout errors
+
+**Diagnosis | 诊断**:
+- Cloud security group/firewall not configured
+- Docker ports not exposed
+- Nginx not listening on those ports
+
+**Quick Fix | 快速修复**:
+
+1. **Check Docker Compose ports**:
+```yaml
+# docker-compose.yml
+nginx:
+  ports:
+    - "0.0.0.0:443:443"
+    - "0.0.0.0:8443:8443"    # Doctor HTTPS
+    - "0.0.0.0:8444:8444"    # Admin HTTPS
+```
+
+2. **Check Nginx configuration**:
+```nginx
+# docker/nginx/nginx.conf
+server {
+    listen 8443 ssl;  # Doctor platform
+    # ...
+}
+
+server {
+    listen 8444 ssl;  # Admin platform
+    # ...
+}
+```
+
+3. **Configure cloud security group**:
+- **Alibaba Cloud 阿里云**: Add inbound rules for 8443, 8444
+- **AWS**: Update security group
+- **Azure**: Update network security group
+
+**Verification Script | 验证脚本**:
+```bash
+#!/bin/bash
+# verify-https-ports.sh
+
+DOMAIN="${1:-localhost}"
+
+echo "Testing HTTPS endpoints..."
+
+for port in 443 8443 8444; do
+    echo -n "Port $port: "
+    response=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN:$port" --insecure 2>/dev/null)
+    if [ "$response" = "200" ] || [ "$response" = "301" ] || [ "$response" = "403" ]; then
+        echo "✅ Working (HTTP $response)"
+    else
+        echo "❌ Failed (HTTP $response)"
+    fi
+done
+```
+
+Usage | 使用方法:
+```bash
+./verify-https-ports.sh openmedicareai.life
+```
+
+---
+
+### Issue 7: Container Restart Loop | 容器重启循环
+
+**Symptoms | 现象**:
+```
+Container medicare_nginx Restarting (1) 5 seconds ago
+Container keeps restarting
+```
+
+**Diagnosis | 诊断**:
+- Configuration error preventing startup
+- Missing SSL certificates
+- Port conflicts
+- Syntax error in config files
+
+**Debug Steps | 调试步骤**:
+
+1. Check logs | 查看日志:
+```bash
+docker compose logs nginx --tail=50
+docker compose logs frontend --tail=50
+docker compose logs backend --tail=50
+```
+
+2. Test nginx configuration | 测试 nginx 配置:
+```bash
+docker compose exec nginx nginx -t
+```
+
+3. Check for port conflicts | 检查端口冲突:
+```bash
+sudo lsof -i :80
+sudo lsof -i :443
+sudo lsof -i :8443
+sudo lsof -i :8444
+```
+
+4. Verify SSL certificates exist | 验证 SSL 证书存在:
+```bash
+ls -la docker/nginx/ssl/
+```
+
+---
+
+## 📋 Deployment Checklist | 部署检查清单
+
+### Pre-Deployment | 部署前
+
+- [ ] Updated `frontend/vite.config.ts` with `allowedHosts`
+- [ ] Updated `frontend/src/lib/config.ts` with `API_BASE: ''`
+- [ ] SSL certificates in `docker/nginx/ssl/`
+- [ ] SSL certificates have correct permissions (644/600)
+- [ ] `.env` file configured with production values
+- [ ] `docker-compose.yml` exposes ports 8443, 8444
+- [ ] `docker/nginx/nginx.conf` configured for multi-platform
+
+### Deployment | 部署
+
+- [ ] Run `docker compose build --no-cache`
+- [ ] Run `docker compose up -d`
+- [ ] Wait for database initialization (30 seconds)
+- [ ] Check all containers are running: `docker compose ps`
+
+### Post-Deployment Verification | 部署后验证
+
+- [ ] Patient platform (443): `curl https://localhost --insecure`
+- [ ] Doctor platform (8443): `curl https://localhost:8443 --insecure`
+- [ ] Admin platform (8444): `curl https://localhost:8444 --insecure`
+- [ ] Admin login works with platform parameter
+- [ ] No WebSocket errors in browser console
+- [ ] API requests use relative paths
+
+---
+
+**Last Updated | 最后更新**: 2026-03-02  
+**Version | 版本**: v2.1.0  
+**Maintainer | 维护者**: MediCareAI Team

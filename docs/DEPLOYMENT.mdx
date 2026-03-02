@@ -16,6 +16,17 @@
 
 - [System Requirements | 系统要求](#system-requirements)
 - [Quick Deployment | 快速部署](#quick-deployment)
+  - [Local/Home Deployment (No SSL) | 本地/家庭部署 (无 SSL)](#local-deployment)
+  - [Production Deployment (With SSL) | 生产部署 (带 SSL)](#production-deployment)
+- [Detailed Installation | 详细安装步骤](#detailed-installation)
+- [Configuration Guide | 配置指南](#configuration-guide)
+- [Production Deployment | 生产环境部署](#production-deployment-detailed)
+- [Troubleshooting | 故障排除](#troubleshooting)
+- [Maintenance | 维护指南](#maintenance)
+- [Deployment Fixes | 部署修复记录](#deployment-fixes)
+
+- [System Requirements | 系统要求](#system-requirements)
+- [Quick Deployment | 快速部署](#quick-deployment)
 - [Detailed Installation | 详细安装步骤](#detailed-installation)
 - [Configuration Guide | 配置指南](#configuration-guide)
 - [Production Deployment | 生产环境部署](#production-deployment)
@@ -62,6 +73,79 @@ sudo chmod +x /usr/local/bin/docker-compose
 
 ### One-Command Deployment | 一键部署
 
+#### Option 1: Local/Home Deployment (No SSL) | 本地/家庭部署 (无 SSL)
+
+最简单的部署方式，适合家庭内网使用：
+
+```bash
+# 1. 克隆仓库 / Clone repository
+git clone https://github.com/yourusername/MediCare_AI.git
+cd MediCare_AI
+
+# 2. 配置环境 / Configure environment
+cp .env.example .env
+# 编辑 .env 设置你的密码 (可选，使用默认密码也可以工作)
+# nano .env
+
+# 3. 使用开发配置启动 / Start with development config (NO SSL required)
+docker compose -f docker-compose.dev.yml up -d --build
+
+# 4. 等待数据库初始化 / Wait for database initialization
+sleep 30
+
+# 5. 验证部署 / Verify deployment
+curl http://localhost/health && echo "✅ Deployment successful!"
+```
+
+**访问地址 | Access URLs:**
+- 患者端: http://localhost
+- 医生端: http://localhost:8081
+- 管理员端: http://localhost:8080
+- API 文档: http://localhost/api/docs
+
+**特点 | Features:**
+- ✅ 无需 SSL 证书
+- ✅ 无需域名
+- ✅ 适合家庭内网
+- ✅ 启用热重载 (HMR)
+- ✅ 简化的配置
+
+---
+
+#### Option 2: Production Deployment (With SSL) | 生产部署 (带 SSL)
+
+适合公网部署，需要 SSL 证书：
+
+```bash
+# 1. 克隆仓库 / Clone repository
+git clone https://github.com/yourusername/MediCare_AI.git
+cd MediCare_AI
+
+# 2. 配置环境 / Configure environment
+cp .env.example .env
+# 编辑 .env 配置生产环境参数 / Edit .env for production
+
+# 3. 生成 SSL 证书 / Generate SSL certificates
+mkdir -p docker/nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout docker/nginx/ssl/key.pem \
+  -out docker/nginx/ssl/cert.pem \
+  -subj "/C=CN/ST=State/L=City/O=MediCare_AI/CN=localhost"
+
+# 4. 启动服务 / Start services
+docker-compose up -d
+
+# 5. 验证部署 / Verify deployment
+curl https://localhost/health --insecure
+echo "✅ Deployment successful! Access: https://localhost"
+```
+
+---
+
+### Manual Quick Start | 手动快速开始
+
+对于需要更多控制的部署：
+
 ```bash
 # 克隆仓库 / Clone repository
 git clone https://github.com/yourusername/MediCare_AI.git
@@ -98,6 +182,105 @@ print('✅ Database initialized successfully!')
 # 5. 验证部署 / Verify deployment
 curl http://localhost/health
 echo "✅ Deployment successful! Access: http://localhost"
+```
+
+---
+
+<a name="local-deployment"></a>
+## 🏠 Local/Home Deployment (No SSL Required) | 本地/家庭部署 (无需 SSL)
+
+本章节介绍如何在家庭内网或本地开发环境中快速部署 MediCareAI，**无需 SSL 证书和域名**。
+
+### 适用场景 | Use Cases
+
+- 🏠 **家庭内网使用** - 在局域网内通过 IP 地址访问
+- 💻 **本地开发测试** - 快速启动开发环境
+- 🔧 **功能演示** - 向他人展示系统功能
+- 📚 **学习研究** - 了解系统架构和代码
+
+### 系统要求 | Requirements
+
+- Docker 20.10+
+- Docker Compose 2.0+
+- 4GB+ RAM
+- 10GB+ 磁盘空间
+
+### 部署步骤 | Deployment Steps
+
+#### Step 1: 克隆仓库
+
+```bash
+git clone https://github.com/yourusername/MediCareAI.git
+cd MediCareAI
+```
+
+#### Step 2: 配置环境 (可选)
+
+```bash
+# 复制环境变量模板
+cp .env.example .env
+
+# 默认配置已经可以工作，但建议修改以下配置：
+# - POSTGRES_PASSWORD: 数据库密码
+# - REDIS_PASSWORD: Redis 密码
+# - JWT_SECRET_KEY: JWT 密钥 (至少 32 位)
+nano .env
+```
+
+#### Step 3: 启动服务
+
+```bash
+# 使用开发配置文件启动 (无 SSL)
+docker compose -f docker-compose.dev.yml up -d --build
+
+# 查看启动日志
+docker compose -f docker-compose.dev.yml logs -f
+```
+
+#### Step 4: 验证部署
+
+```bash
+# 等待约 30 秒让数据库初始化
+sleep 30
+
+# 检查健康状态
+curl http://localhost/health
+
+# 查看所有服务状态
+docker compose -f docker-compose.dev.yml ps
+```
+
+### 访问地址 | Access URLs
+
+| 平台 | 本地访问 | 局域网访问 (假设 IP: 192.168.1.100) |
+|------|---------|----------------------------------|
+| **患者端** | http://localhost | http://192.168.1.100 |
+| **医生端** | http://localhost:8081 | http://192.168.1.100:8081 |
+| **管理员端** | http://localhost:8080 | http://192.168.1.100:8080 |
+| **API 文档** | http://localhost/api/docs | http://192.168.1.100/api/docs |
+
+### 局域网访问配置 | LAN Access Configuration
+
+如果你想在家庭网络的其他设备上访问：
+
+#### 1. 查找本机 IP 地址
+
+```bash
+# Linux/macOS
+ip addr show | grep "inet " | head -1
+
+# 或使用 hostname
+hostname -I
+```
+
+#### 2. 修改 CORS 配置
+
+编辑 `.env` 文件，添加你的局域网 IP 到 `CORS_ORIGINS`
+
+#### 3. 重启服务
+
+```bash
+docker compose -f docker-compose.dev.yml restart
 ```
 
 ---
@@ -769,3 +952,335 @@ server {
 3. **Rollback mechanism** - Auto rollback on deployment failure
 4. **Log collection** - Centralized log management
 
+
+---
+
+## 📋 Deployment Fixes & Solutions (2026-03-02)
+
+### Issue 1: Vite 403 Forbidden Error | Vite 403 错误
+
+**Problem | 问题:**
+```
+Blocked request. This host ("medicare_frontend") is not allowed.
+To allow this host, add "medicare_frontend" to `server.allowedHosts`
+```
+
+**Root Cause | 根本原因:**
+- Vite 6.x introduced stricter security with `allowedHosts`
+- Nginx reverse proxy uses container hostname `medicare_frontend`
+- Default configuration only allows `localhost`
+
+**Solution | 解决方案:**
+
+Edit `frontend/vite.config.ts`:
+```typescript
+export default defineConfig({
+  server: {
+    port: 3000,
+    host: true,
+    allowedHosts: ['all', 'medicare_frontend', 'openmedicareai.life', 'localhost'],
+    // ... other config
+  },
+})
+```
+
+**Production Note | 生产环境注意:**
+Use explicit domain list instead of `'all'` for better security:
+```typescript
+allowedHosts: [
+  'medicare_frontend',
+  'openmedicareai.life',
+  'www.openmedicareai.life'
+]
+```
+
+---
+
+### Issue 2: API Base URL Configuration | API 基础 URL 配置
+
+**Problem | 问题:**
+- Frontend attempts to connect to `http://localhost:8000`
+- API requests fail in production environment
+- Browser console shows CORS or connection errors
+
+**Root Cause | 根本原因:**
+- `frontend/src/lib/config.ts` uses hardcoded `http://localhost:8000`
+- Production containers cannot access each other's localhost
+
+**Solution | 解决方案:**
+
+Edit `frontend/src/lib/config.ts`:
+```typescript
+export const CONFIG = {
+  // Use relative path for API calls
+  // This allows Nginx to proxy requests correctly
+  API_BASE: '',  // Empty string means relative path
+  API_VERSION: '/api/v1',
+  // ... other config
+}
+```
+
+**How it works | 工作原理:**
+- Empty `API_BASE` makes requests relative to current domain
+- Nginx proxies `/api/*` to backend container
+- Works correctly in both development and production
+
+---
+
+### Issue 3: Vite HMR WebSocket Connection Failed | Vite HMR WebSocket 连接失败
+
+**Problem | 问题:**
+```
+WebSocket connection to 'wss://openmedicareai.life/?token=xxx' failed
+[vite] failed to connect to websocket.
+```
+
+**Root Cause | 根本原因:**
+- Vite's Hot Module Replacement (HMR) tries to establish WebSocket
+- Production environment WebSocket configuration is incorrect
+- Creates unnecessary connection errors in browser console
+
+**Solution | 解决方案:**
+
+Edit `frontend/vite.config.ts`:
+```typescript
+export default defineConfig({
+  server: {
+    // Disable HMR in production
+    hmr: false,
+    // ... other config
+  },
+})
+```
+
+**Alternative | 替代方案:**
+If you need HMR in staging environment, configure it properly:
+```typescript
+hmr: {
+  host: 'openmedicareai.life',
+  port: 443,
+  protocol: 'wss',
+  clientPort: 443,
+}
+```
+
+---
+
+### Issue 4: SSL Certificate Permission | SSL 证书权限问题
+
+**Problem | 问题:**
+```
+nginx: [emerg] cannot load certificate "/etc/nginx/ssl/cert.pem": 
+BIO_new_file() failed (SSL: error:80000002:system library::No such file)
+```
+
+**Root Cause | 根本原因:**
+- SSL certificates copied as root user
+- Nginx container runs as non-root user
+- Permission denied when reading certificate files
+
+**Solution | 解决方案:**
+
+```bash
+# After copying certificates from Let's Encrypt
+sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem docker/nginx/ssl/cert.pem
+sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem docker/nginx/ssl/key.pem
+
+# Set correct ownership (match your Docker user)
+sudo chown $USER:$USER docker/nginx/ssl/*
+
+# Set correct permissions
+chmod 644 docker/nginx/ssl/cert.pem
+chmod 600 docker/nginx/ssl/key.pem
+```
+
+---
+
+### Issue 5: Multi-Platform HTTPS Configuration | 多平台 HTTPS 配置
+
+**Problem | 问题:**
+- Only patient platform (port 443) has HTTPS
+- Doctor and Admin platforms (8080, 8081) use HTTP only
+- Browser shows "Not Secure" warnings
+
+**Solution | 解决方案:**
+
+Configure `docker/nginx/nginx.conf` with multiple HTTPS servers:
+
+```nginx
+# Patient Platform - HTTPS (443)
+server {
+    listen 443 ssl;
+    server_name openmedicareai.life;
+    
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    
+    location / {
+        proxy_pass http://frontend;
+        proxy_set_header X-Platform "patient";
+        # ... other proxy settings
+    }
+}
+
+# Doctor Platform - HTTPS (8443)
+server {
+    listen 8443 ssl;
+    server_name openmedicareai.life;
+    
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    
+    location / {
+        proxy_pass http://frontend;
+        proxy_set_header X-Platform "doctor";
+        # ... other proxy settings
+    }
+}
+
+# Admin Platform - HTTPS (8444)
+server {
+    listen 8444 ssl;
+    server_name openmedicareai.life;
+    
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    
+    location / {
+        proxy_pass http://frontend;
+        proxy_set_header X-Platform "admin";
+        # ... other proxy settings
+    }
+}
+```
+
+Update `docker-compose.yml` to expose new ports:
+```yaml
+nginx:
+  ports:
+    - "0.0.0.0:80:80"
+    - "0.0.0.0:443:443"
+    - "0.0.0.0:8080:8080"    # Admin HTTP (fallback)
+    - "0.0.0.0:8081:8081"    # Doctor HTTP (fallback)
+    - "0.0.0.0:8443:8443"    # Doctor HTTPS (NEW)
+    - "0.0.0.0:8444:8444"    # Admin HTTPS (NEW)
+```
+
+**Cloud Firewall Configuration | 云防火墙配置:**
+
+| Port | Protocol | Purpose | Security Group Rule |
+|------|----------|---------|-------------------|
+| 80 | TCP | HTTP redirect | Allow |
+| 443 | TCP | Patient HTTPS | Allow |
+| 8443 | TCP | Doctor HTTPS | Allow |
+| 8444 | TCP | Admin HTTPS | Allow |
+
+---
+
+### Issue 6: Admin Login Platform Parameter | 管理员登录 Platform 参数
+
+**Problem | 问题:**
+```json
+{
+  "detail": "Access denied. admin accounts can only login through admin platform(s)."
+}
+```
+
+**Root Cause | 根本原因:**
+- Backend requires `platform` parameter in login request
+- Frontend must specify which platform user is logging into
+- Admin users can only access admin platform
+
+**Solution | 解决方案:**
+
+Ensure frontend login code includes platform parameter:
+
+```typescript
+// AdminLoginPage.tsx
+const onSubmit = async (data: LoginCredentials) => {
+  await login({
+    email: data.email,
+    password: data.password,
+    platform: 'admin',  // Required for admin login
+  });
+};
+
+// LoginCredentials type
+interface LoginCredentials {
+  email: string;
+  password: string;
+  platform?: 'patient' | 'doctor' | 'admin';
+}
+```
+
+API test command | API 测试命令:
+```bash
+curl -X POST https://openmedicareai.life/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@medicare.ai",
+    "password": "admin123456",
+    "platform": "admin"
+  }'
+```
+
+---
+
+## 🚀 Updated Deployment Checklist (2026-03-02)
+
+### Pre-Deployment | 部署前
+
+```bash
+# 1. Verify configuration files are updated
+#    - frontend/vite.config.ts (allowedHosts, hmr)
+#    - frontend/src/lib/config.ts (API_BASE)
+#    - docker/nginx/nginx.conf (multi-platform SSL)
+
+# 2. Prepare SSL certificates with correct permissions
+chmod 644 docker/nginx/ssl/cert.pem
+chmod 600 docker/nginx/ssl/key.pem
+
+# 3. Update .env with production values
+#    - All passwords should be strong
+#    - DEBUG=false
+#    - CORS origins restricted
+```
+
+### Deployment | 部署
+
+```bash
+# Build all services
+docker compose build --no-cache
+
+# Start services
+docker compose up -d
+
+# Verify all containers are running
+docker compose ps
+
+# Check logs for errors
+docker compose logs -f --tail=100
+```
+
+### Post-Deployment Verification | 部署后验证
+
+```bash
+# Test HTTPS endpoints
+curl -s -o /dev/null -w "%{http_code}" https://localhost --insecure
+curl -s -o /dev/null -w "%{http_code}" https://localhost:8443 --insecure
+curl -s -o /dev/null -w "%{http_code}" https://localhost:8444 --insecure
+
+# Test admin login
+curl -X POST https://localhost/api/v1/auth/login --insecure \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@medicare.ai","password":"admin123456","platform":"admin"}'
+
+# Test health endpoint
+curl https://localhost/health --insecure
+```
+
+---
+
+**Last Updated | 最后更新:** 2026-03-02  
+**Version | 版本:** 1.2.0  
+**Author | 作者:** Sisyphus AI Assistant

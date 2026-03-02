@@ -1,7 +1,7 @@
 // 全局配置文件
 export const CONFIG = {
   // API 配置
-  API_BASE: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  API_BASE: '',  // 使用相对路径，通过 Nginx 代理访问 API
   API_VERSION: '/api/v1',
   
   // 请求配置

@@ -254,34 +254,188 @@ docker compose pull
 docker compose up -d
 ```
 
-### Option 2: Production Deployment | 生产部署
+### Local/Home Deployment (No SSL Required) | 本地/家庭部署 (无需 SSL)
+
+适合在家庭内网使用，无需域名和 SSL 证书，一键部署！
+
+#### 快速开始 | Quick Start
 
 ```bash
-# 1. Clone repository / 克隆仓库
+# 1. 克隆仓库
 git clone https://github.com/yourusername/MediCareAI.git
 cd MediCareAI
 
-# 2. Configure environment / 配置环境变量
+# 2. 配置环境变量 (使用默认密码)
 cp .env.example .env
-# Edit .env with your configuration / 编辑 .env 文件
 
-# 3. Generate SSL certificates (for local testing) / 生成 SSL 证书（本地测试）
+# 3. 一键启动 (使用开发配置，无 SSL)
+docker compose -f docker-compose.dev.yml up -d --build
+
+# 4. 等待初始化完成 (约 30 秒)
+sleep 30
+
+# 5. 验证部署
+curl http://localhost/health
+echo "✅ 部署成功！"
+```
+
+#### 访问地址 | Access URLs
+
+| 平台 | 地址 | 说明 |
+|------|------|------|
+| **患者端** | http://localhost | 主平台 |
+| **医生端** | http://localhost:8081 | 医生专用 |
+| **管理员端** | http://localhost:8080 | 后台管理 |
+| **API 文档** | http://localhost/api/docs | Swagger UI |
+| **直接访问后端** | http://localhost:8000 | FastAPI 文档 |
+| **前端开发服务器** | http://localhost:3000 | Vite HMR |
+
+#### 特点 | Features
+
+- ✅ **无需 SSL 证书** - 纯 HTTP 访问，适合家庭内网
+- ✅ **无需域名** - 使用 localhost 或局域网 IP
+- ✅ **简化的配置** - 自动使用默认密码
+- ✅ **调试友好** - 启用热重载 (HMR) 和详细日志
+- ✅ **资源占用低** - 适合个人电脑或家用 NAS
+
+#### 局域网访问 | LAN Access
+
+如果你想在家庭网络的其他设备上访问：
+
+```bash
+# 1. 查找本机 IP
+ip addr show | grep "inet " | head -1
+# 例如: 192.168.1.100
+
+# 2. 修改 .env 文件中的 CORS 配置
+# CORS_ORIGINS=["http://localhost", "http://127.0.0.1", "http://192.168.1.100"]
+
+# 3. 重启服务
+docker compose -f docker-compose.dev.yml restart
+```
+
+然后在其他设备上访问：`http://192.168.1.100`
+
+#### 切换到生产模式 | Switch to Production
+
+当你准备部署到公网时：
+
+```bash
+# 停止开发环境
+docker compose -f docker-compose.dev.yml down
+
+# 切换到生产配置 (需要 SSL 证书)
+docker compose up -d --build
+```
+
+---
+
+### Production Deployment | 生产部署
+
+#### Step 1: Server Preparation | 步骤 1: 服务器准备
+
+```bash
+# 安装 Docker 和 Docker Compose
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-plugin
+
+# 或使用官方脚本
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+```
+
+#### Step 2: Clone and Configure | 步骤 2: 克隆和配置
+
+```bash
+# 克隆仓库
+git clone https://github.com/yourusername/MediCareAI.git
+cd MediCareAI
+
+# 配置环境变量
+cp .env.example .env
+nano .env  # 编辑配置
+```
+
+#### Step 3: SSL Certificate Setup | 步骤 3: SSL 证书配置
+
+**Option A: Let's Encrypt (Recommended) | 方式 A: Let's Encrypt (推荐)**
+
+```bash
+# 安装 certbot
+sudo apt-get install certbot
+
+# 申请证书 (standalone 模式，需要临时停止占用 80 端口的服务)
+sudo certbot certonly --standalone -d openmedicareai.life
+
+# 复制证书到项目目录
+sudo mkdir -p docker/nginx/ssl
+sudo cp /etc/letsencrypt/live/openmedicareai.life/fullchain.pem docker/nginx/ssl/cert.pem
+sudo cp /etc/letsencrypt/live/openmedicareai.life/privkey.pem docker/nginx/ssl/key.pem
+
+# 设置正确权限 (重要!)
+sudo chown $USER:$USER docker/nginx/ssl/*
+chmod 644 docker/nginx/ssl/cert.pem
+chmod 600 docker/nginx/ssl/key.pem
+
+# 配置自动续期
+echo "0 12 * * * /usr/bin/certbot renew --quiet" | sudo crontab -
+```
+
+**Option B: Self-Signed (Testing Only) | 方式 B: 自签名证书 (仅测试)**
+
+```bash
 mkdir -p docker/nginx/ssl
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout docker/nginx/ssl/key.pem \
   -out docker/nginx/ssl/cert.pem \
   -subj "/C=CN/ST=State/L=City/O=MediCareAI/CN=localhost"
-
-# 4. Start application / 启动应用
-# 数据库会自动初始化，管理员账号会自动创建
-docker-compose up -d
 ```
+
+#### Step 4: Deploy | 步骤 4: 部署
+
+```bash
+# 构建并启动
+docker compose build --no-cache
+docker compose up -d
+
+# 等待数据库初始化 (约 15-30 秒)
+sleep 20
+
+# 验证状态
+docker compose ps
+curl https://localhost/health --insecure
+```
+
+#### Step 5: Firewall Configuration | 步骤 5: 防火墙配置
+
+```bash
+# 开放必要端口
+sudo ufw allow 80/tcp      # HTTP (自动重定向到 HTTPS)
+sudo ufw allow 443/tcp     # HTTPS 患者端
+sudo ufw allow 8443/tcp    # HTTPS 医生端
+sudo ufw allow 8444/tcp    # HTTPS 管理员端
+sudo ufw enable
+```
+
+**云服务器安全组配置** (阿里云/腾讯云/AWS):
+- 入方向开放: 80, 443, 8443, 8444 TCP 端口
 
 ### Access Application | 访问应用
 
+#### Development | 开发环境
 - **Frontend | 前端:** http://localhost
 - **API Docs | API 文档:** http://localhost/api/docs
 - **Health Check | 健康检查:** http://localhost/health
+
+#### Production | 生产环境
+
+| 平台 | HTTP 地址 | HTTPS 地址 | 说明 |
+|------|----------|-----------|------|
+| **患者端** | http://openmedicareai.life | https://openmedicareai.life | 主平台 |
+| **医生端** | http://openmedicareai.life:8081 | https://openmedicareai.life:8443 | 医生专用 |
+| **管理员端** | http://openmedicareai.life:8080 | https://openmedicareai.life:8444 | 后台管理 |
+| **API 文档** | - | https://openmedicareai.life/api/docs | Swagger UI |
 
 ### Default Admin Account | 默认管理员账号
 
@@ -289,9 +443,6 @@ docker-compose up -d
 - **邮箱 | Email:** `admin@medicare.ai`
 - **密码 | Password:** `admin123456`
 - **角色 | Role:** `admin (super)`
-
-管理员平台访问地址：
-- http://localhost:8080 (管理员平台 | Admin Platform)
 
 ⚠️ **安全提示 | Security Notice:** 请在首次登录后立即修改密码！
 
@@ -302,17 +453,21 @@ docker-compose up -d
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Nginx Reverse Proxy                          │
-│                 (Port 80/443 - SSL/TLS)                         │
+│         (Ports: 80→443 HTTP/HTTPS, 8443 Doctor, 8444 Admin)     │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌───────────────┬───────────────┬───────────────────────────┐  │
+│  │  Patient      │   Doctor      │     Admin                 │  │
+│  │  Port 443     │   Port 8443   │    Port 8444              │  │
+│  │  (HTTPS)      │   (HTTPS)     │    (HTTPS)                │  │
+│  └───────┬───────┴───────┬───────┴───────────┬───────────────┘  │
+│          │               │                   │                  │
+└──────────┼───────────────┼───────────────────┼──────────────────┘
+           │               │                   │
+           ▼               ▼                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Backend API                              │
+│                     FastAPI (Port 8000)                         │
 └───────────────────────────┬─────────────────────────────────────┘
-                            │
-            ┌───────────────┼───────────────┐
-            │               │               │
-┌───────────▼──────┐ ┌──────▼──────┐ ┌──────▼────────┐
-│     Frontend     │ │   Backend   │ │  API Docs     │
-│  React 18 + TS   │ │   FastAPI   │ │  (Swagger)    │
-│  Vite + MUI v6   │ │  (Port 8000)│ │               │
-│  (Port 3000)     │ │             │ │               │
-└──────────────────┘ └──────┬──────┘ └───────────────┘
                             │
         ┌───────────────────┼───────────────────┐
         │                   │                   │
@@ -327,6 +482,37 @@ docker-compose up -d
                     │   AI LLM API     │
                     │ (OpenAI-compatible│
                     │    API Support)  │
+                    └──────────────────┘
+```
+
+### Multi-Platform Architecture | 多平台架构
+
+MediCareAI uses a **multi-platform architecture** where each role has dedicated access points:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Users                               │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│    Patients     │    Doctors      │       Admins            │
+│                 │                 │                         │
+│  ┌───────────┐  │  ┌───────────┐  │  ┌─────────────────┐    │
+│  │   Port    │  │  │   Port    │  │  │      Port       │    │
+│  │   443     │  │  │  8443     │  │  │     8444        │    │
+│  │  (HTTPS)  │  │  │  (HTTPS)  │  │  │    (HTTPS)      │    │
+│  └─────┬─────┘  │  └─────┬─────┘  │  └────────┬────────┘    │
+│        │        │        │        │           │             │
+│        ▼        │        ▼        │           ▼             │
+│  ┌───────────┐  │  ┌───────────┐  │  ┌─────────────────┐    │
+│  │  Patient  │  │  │  Doctor   │  │  │      Admin      │    │
+│  │  Platform │  │  │  Platform │  │  │     Platform    │    │
+│  │           │  │  │           │  │  │                 │    │
+│  │ • Submit  │  │  │ • View    │  │  │ • System        │    │
+│  │   cases   │  │  │   cases   │  │  │   monitoring    │    │
+│  │ • AI diag │  │  │ • Add     │  │  │ • Doctor        │    │
+│  │ • Records │  │  │   comments│  │  │   verification  │    │
+│  └───────────┘  │  └───────────┘  │  └─────────────────┘    │
+└─────────────────┴─────────────────┴─────────────────────────┘
+```
                     └──────────────────┘
 ```
 

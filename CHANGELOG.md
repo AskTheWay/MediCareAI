@@ -9,10 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
-TZ|---
-SV|---
-BY|
-KN|## [3.0.6] - 2026-03-01
+---
+
+## [3.1.0] - 2026-03-02
+
+### 部署修复与优化 | Deployment Fixes & Optimizations | 🚀
+
+#### 生产环境部署修复 (Production Deployment Fixes)
+- **前端 API 配置修复** Frontend API Configuration Fix
+  - `frontend/src/lib/config.ts`: `API_BASE` 从 `http://localhost:8000` 改为相对路径 `''`
+  - 解决生产环境 API 请求超时/失败问题
+  - 通过 Nginx 代理转发 API 请求
+
+- **Vite 反向代理配置** Vite Reverse Proxy Configuration
+  - `frontend/vite.config.ts`: 添加 `allowedHosts` 配置支持 Docker 容器名
+  - 禁用生产环境 HMR (`hmr: false`)，避免 WebSocket 连接错误
+  - 解决 `403 Forbidden - Host Not Allowed` 错误
+
+- **Nginx 多平台 HTTPS 支持** Multi-Platform HTTPS Support
+  - 新增 `docker/nginx/nginx-ssl.conf`: 完整的 SSL/TLS 配置
+  - 支持三个平台独立 HTTPS 端口：
+    - 患者端: 443 (主站)
+    - 医生端: 8443 (新增)
+    - 管理员端: 8444 (新增)
+  - 自动 HTTP 到 HTTPS 重定向
+
+- **本地/家庭部署配置** Local/Home Deployment Configuration
+  - 新增 `docker-compose.dev.yml`: 无需 SSL 证书的简化配置
+  - 新增 `docker/nginx/nginx-dev.conf`: 纯 HTTP Nginx 配置
+  - 支持一键本地部署：`docker compose -f docker-compose.dev.yml up -d`
+
+#### 邮件服务配置与诊断 (Email Service Configuration & Diagnostics)
+- **邮件配置诊断工具** Email Configuration Diagnostic Tools
+  - `scripts/email-config-check.sh`: 完整的邮件配置检查和测试脚本
+  - `scripts/diagnose-email-issue.sh`: 快速诊断 SMTP 端口/TLS 配置问题
+  - `scripts/check-frontend-url.sh`: 检查 FRONTEND_URL 生产环境配置
+
+- **邮件配置文档更新** Email Configuration Documentation
+  - `.env.example`: 添加详细的 SMTP 配置说明和常见邮箱示例
+  - `docs/PRODUCTION_DEPLOYMENT.mdx`: 新增邮件配置章节和故障排除指南
+  - 包含 Gmail、QQ邮箱、163邮箱等常见服务商配置示例
+
+#### 文档更新 (Documentation Updates)
+- **README.md**: 新增本地部署快速指南和多平台访问地址表格
+- **docs/DEPLOYMENT.mdx`: 新增本地/家庭部署章节（无需 SSL）
+- **docs/TROUBLESHOOTING.mdx`: 新增部署故障排除章节（7个常见问题）
+
+---
+
+## [3.0.6] - 2026-03-01
 VP|
 HV|### RAG 重排序系统 | RAG Reranking System | 🔄
 XK|
