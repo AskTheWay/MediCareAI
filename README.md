@@ -513,8 +513,6 @@ MediCareAI uses a **multi-platform architecture** where each role has dedicated 
 │  └───────────┘  │  └───────────┘  │  └─────────────────┘    │
 └─────────────────┴─────────────────┴─────────────────────────┘
 ```
-                    └──────────────────┘
-```
 
 ### Architecture Components | 架构组件
 
