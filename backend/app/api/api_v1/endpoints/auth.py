@@ -545,17 +545,56 @@ async def register_doctor(
 
     existing_user = await user_service.get_user_by_email(email)
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱已被注册"
-        )
-
+        # 检查是否是医生且审核被拒绝，如果是则允许重新注册
+        if existing_user.role == "doctor":
+            # 获取医生的审核记录
+            stmt = select(DoctorVerification).where(DoctorVerification.user_id == existing_user.id)
+            result = await db.execute(stmt)
+            verification = result.scalar_one_or_none()
+            
+            if verification and verification.status == "rejected":
+                # 审核被拒绝的医生允许重新注册，删除旧账号和旧审核记录
+                logger.info(f"医生 {email} 之前的审核被拒绝，允许重新注册，删除旧记录")
+                
+                # 删除旧的审核记录
+                await db.delete(verification)
+                
+                # 删除旧的用户账号
+                await db.delete(existing_user)
+                await db.commit()
+                logger.info(f"已删除医生 {email} 的旧账号和审核记录，准备重新注册")
+            else:
+                # 其他状态（已通过审核或待审核）不允许重复注册
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱已被注册"
+                )
+        else:
+            # 非医生角色，邮箱已存在
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱已被注册"
+            )
+    # 检查执业证书号是否已被使用（排除被拒绝的医生）
     stmt = select(User).where(User.license_number == license_number)
     result = await db.execute(stmt)
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="该执业证书号已被注册"
-        )
-
+    existing_license_user = result.scalar_one_or_none()
+    if existing_license_user:
+        # 检查该用户是否是医生且审核被拒绝
+        if existing_license_user.role == "doctor":
+            stmt = select(DoctorVerification).where(DoctorVerification.user_id == existing_license_user.id)
+            result = await db.execute(stmt)
+            verification = result.scalar_one_or_none()
+            
+            # 如果不是被拒绝状态，则不允许使用
+            if not (verification and verification.status == "rejected"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="该执业证书号已被注册"
+                )
+            # 如果是被拒绝状态，说明之前的账号会被删除，允许使用
+            logger.info(f"执业证书号 {license_number} 属于被拒绝的医生，允许重新使用")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="该执业证书号已被注册"
+            )
     from app.core.security import get_password_hash
 
     user = User(
