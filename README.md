@@ -186,7 +186,6 @@
 - **性能提升**: 检索精度提升 10-20%
 
 ### 9. 🔒 Security & Privacy | 安全与隐私
-### 8. 🔒 Security & Privacy | 安全与隐私
 **English:** Enterprise-grade security measures:
 - **PII Protection**: Automatic detection of names, IDs, phone numbers, addresses in documents
 - **Role-Based Access**: Strict separation between patient, doctor, and admin data
@@ -542,8 +541,6 @@ docker-compose up -d
 # 生产环境
 docker-compose -f docker-compose.prod.yml up -d
 ```
-
----
 
 ---
 
