@@ -11,6 +11,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.4] - 2026-03-03
+
+### Bug 修复 Bug Fixes | 🐛
+
+#### OSS 连通性测试修复 (OSS Connectivity Test Fix)
+
+**问题描述**
+- 管理员在 AI模型配置 页面配置阿里云OSS后，点击"测试连通性"按钮报错："OSS not configured"
+- 但配置状态显示"正常(已配置)"，其他AI模型测试正常
+
+**根本原因**
+- `os_service` 是单例对象，在服务启动时从环境变量初始化
+- 用户在界面配置OSS后，配置保存到数据库，但单例实例未刷新
+- 测试连通性时，`health_check()` 发现 `self.bucket` 为 None，返回 "OSS not configured"
+
+**修复方案**
+- 在 `test_oss_connection()` 函数中，测试前先调用 `reload_config_from_db(db)` 重载最新配置
+- 文件: `backend/app/api/api_v1/endpoints/admin.py`
+- 代码变更:
+  ```python
+  # 测试前先重载配置
+  await os_service.reload_config_from_db(db)
+  health_result = os_service.health_check()
+  ```
+
+### 变更 Changed
+- `backend/app/api/api_v1/endpoints/admin.py` - OSS测试前重载数据库配置
+
+---
+
+## [3.1.3] - 2026-03-03
+
+### 关键安全修复 Critical Security Fixes | 🔒
+
+#### 1. CORS 配置安全加固
+**风险**: 生产环境允许所有来源 (`["*"]`) 访问API，存在CSRF攻击风险
+**修复**:
+- `backend/app/main.py`: CORS改为从环境变量 `CORS_ORIGINS` 读取
+- 开发环境默认 `DEBUG=true` 时允许 `["*"]`
+- 生产环境必须配置具体域名，如 `["https://your-domain.com"]`
+- `docker-compose.yml`: 添加 `CORS_ORIGINS` 环境变量支持
+
+#### 2. TrustedHost 配置安全加固
+**风险**: 允许所有主机头 (`["*"]`)，存在Host Header攻击风险
+**修复**:
+- `backend/app/main.py`: TrustedHost改为从环境变量 `ALLOWED_HOSTS` 读取
+- 生产环境必须配置具体域名
+- `docker-compose.yml`: 添加 `ALLOWED_HOSTS` 环境变量支持
+
+#### 3. ProxyHeadersMiddleware 配置安全加固
+**风险**: 信任所有代理主机 (`["*"]`)，攻击者可伪造X-Forwarded-For头部
+**修复**:
+- `backend/app/main.py`: 代理信任列表改为从 `TRUSTED_PROXY_HOSTS` 读取
+- 生产环境默认只允许本地网络和Docker网络
+- `docker-compose.yml`: 添加 `TRUSTED_PROXY_HOSTS` 环境变量支持
+
+#### 4. 移除硬编码密码
+**风险**: docker-compose.yml 中硬编码数据库密码 `medicare123456`
+**修复**:
+- `docker-compose.yml`: 所有密码改为环境变量引用
+  - `POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}`
+  - `REDIS_PASSWORD: ${REDIS_PASSWORD}`
+  - `DATABASE_URL` 和 `REDIS_URL` 中的密码使用变量替换
+
+#### 5. DEBUG 模式配置化
+**风险**: docker-compose.yml 中硬编码 `DEBUG: "true"`
+**修复**:
+- `docker-compose.yml`: `DEBUG: ${DEBUG:-true}`
+- 开发环境默认 `true`，生产环境应在 `.env` 中设置为 `false`
+
+### 文档更新 Documentation
+
+#### 新增文档
+- `PRODUCTION_UPDATE_GUIDE.md` - 生产环境安全更新完整指南
+- `scripts/update-production.sh` - 自动化服务器更新脚本
+
+#### 更新文档
+- `.env.example` - 添加详细的环境变量配置示例和说明
+- `README.md` - 添加首次部署配置说明，指导用户设置密码和管理员账号
+- `docs/PRODUCTION_DEPLOYMENT.mdx` - 添加生产环境CORS/Host配置详细说明和故障排除
+
+### 变更 Changed
+- `backend/app/main.py` - 安全中间件改为环境变量驱动
+- `docker-compose.yml` - 移除硬编码密码和DEBUG配置
+- `.env.example` - 新增安全相关环境变量
+- `README.md` - 新增首次部署指南
+- `docs/PRODUCTION_DEPLOYMENT.mdx` - 新增安全配置章节
+
+---
+
+## [3.1.2] - 2026-03-02
+
 ## [3.1.2] - 2026-03-03
 
 ### Bug 修复 Bug Fixes | 🐛
