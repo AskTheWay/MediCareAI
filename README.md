@@ -574,31 +574,31 @@ docker-compose -f docker-compose.prod.yml up -d
 ## 🏗️ Architecture | 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Nginx Reverse Proxy                          │
-│         (Ports: 80→443 HTTP/HTTPS, 8443 Doctor, 8444 Admin)     │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌───────────────┬───────────────┬───────────────────────────┐  │
-│  │  Patient      │   Doctor      │     Admin                 │  │
-│  │  Port 443     │   Port 8443   │    Port 8444              │  │
-│  │  (HTTPS)      │   (HTTPS)     │    (HTTPS)                │  │
-│  └───────┬───────┴───────┬───────┴───────────┬───────────────┘  │
-│          │               │                   │                  │
-└──────────┼───────────────┼───────────────────┼──────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Nginx Reverse Proxy                                 │
+│              (Ports: 80→443 HTTP/HTTPS, 8443 Doctor, 8444 Admin)            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────────┬───────────────┬───────────────────────────┐              │
+│  │  Patient      │   Doctor      │     Admin                 │              │
+│  │  Port 443     │   Port 8443   │    Port 8444              │              │
+│  │  (HTTPS)      │   (HTTPS)     │    (HTTPS)                │              │
+│  └───────┬───────┴───────┬───────┴───────────┬───────────────┘              │
+│          │               │                   │                              │
+└──────────┼───────────────┼───────────────────┼──────────────────────────────┘
            │               │                   │
            ▼               ▼                   ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        Backend API                              │
-│                     FastAPI (Port 8000)                         │
-└───────────────────────────┬─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Backend API                                          │
+│                     FastAPI (Port 8000)                                     │
+└───────────────────────────┬─────────────────────────────────────────────────┘
                             │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-┌───────▼──────┐ ┌──────────▼──────────┐ ┌─────▼──────────┐
-│  PostgreSQL  │ │       Redis         │ │  MinerU API    │
-│   Database   │ │       Cache         │ │ (Document AI)  │
-│ (Port 5432)  │ │    (Port 6379)      │ │                │
-└──────────────┘ └─────────────────────┘ └────────────────┘
+        ┌───────────────────┼───────────────────┬───────────────────┐
+        │                   │                   │                   │
+┌───────▼──────┐ ┌──────────▼──────────┐ ┌─────▼──────────┐ ┌──────▼──────┐
+│  PostgreSQL  │ │       Redis         │ │  MinerU API    │ │  Android    │
+│   Database   │ │       Cache         │ │ (Document AI)  │ │    App      │
+│ (Port 5432)  │ │    (Port 6379)      │ │                │ │  (Mobile)   │
+└──────────────┘ └─────────────────────┘ └────────────────┘ └─────────────┘
                             │
                              ▼
                     ┌──────────────────┐
@@ -613,34 +613,31 @@ docker-compose -f docker-compose.prod.yml up -d
 MediCareAI uses a **multi-platform architecture** where each role has dedicated access points:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         Users                               │
-├─────────────────┬─────────────────┬─────────────────────────┤
-│    Patients     │    Doctors      │       Admins            │
-│                 │                 │                         │
-│  ┌───────────┐  │  ┌───────────┐  │  ┌─────────────────┐    │
-│  │   Port    │  │  │   Port    │  │  │      Port       │    │
-│  │   443     │  │  │  8443     │  │  │     8444        │    │
-│  │  (HTTPS)  │  │  │  (HTTPS)  │  │  │    (HTTPS)      │    │
-│  └─────┬─────┘  │  └─────┬─────┘  │  └────────┬────────┘    │
-│        │        │        │        │           │             │
-│        ▼        │        ▼        │           ▼             │
-│  ┌───────────┐  │  ┌───────────┐  │  ┌─────────────────┐    │
-│  │  Patient  │  │  │  Doctor   │  │  │      Admin      │    │
-│  │  Platform │  │  │  Platform │  │  │     Platform    │    │
-│  │           │  │  │           │  │  │                 │    │
-│  │ • Submit  │  │  │ • View    │  │  │ • System        │    │
-│  │   cases   │  │  │   cases   │  │  │   monitoring    │    │
-│  │ • AI diag │  │  │ • Add     │  │  │ • Doctor        │    │
-│  │ • Records │  │  │   comments│  │  │   verification  │    │
-│  └───────────┘  │  └───────────┘  │  └─────────────────┘    │
-└─────────────────┴─────────────────┴─────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                         Users                                      │
+├─────────────────┬─────────────────┬─────────────────────────┬──────┤
+│    Patients     │    Doctors      │       Admins            │Mobile│
+│                 │                 │                         │      │
+│  ┌───────────┐  │  ┌───────────┐  │  ┌─────────────────┐    │ ┌──┐ │
+│  │   Port    │  │  │   Port    │  │  │      Port       │    │ │  │ │
+│  │   443     │  │  │  8443     │  │  │     8444        │    │ │Ap│ │
+│  │  (HTTPS)  │  │  │  (HTTPS)  │  │  │    (HTTPS)      │    │ │p │ │
+│  └─────┬─────┘  │  └─────┬─────┘  │  └────────┬────────┘    │ └──┘ │
+│        │        │        │        │           │             │      │
+│        ▼        │        ▼        │           ▼             │      │
+│  ┌───────────┐  │  ┌───────────┐  │  ┌─────────────────┐    │      │
+│  │  Patient  │  │  │  Doctor   │  │  │      Admin      │    │      │
+│  │  Platform │  │  │  Platform │  │  │     Platform    │    │      │
+│  │  (Web)    │  │  │  (Web)    │  │  │     (Web)       │    │      │
+│  └───────────┘  │  └───────────┘  │  └─────────────────┘    │      │
+└─────────────────┴─────────────────┴─────────────────────────┴──────┘
 ```
 
 ### Architecture Components | 架构组件
 
 **English:**
 - **Frontend**: React 18 + TypeScript + Vite, Material-UI v6, three platforms (Patient/Doctor/Admin)
+- **Android App**: Jetpack Compose + Kotlin, MVVM architecture, Ktor client, Hilt DI
 - **Backend**: FastAPI (Python 3.12) with async SQLAlchemy ORM
 - **Database**: PostgreSQL 17 for data persistence
 - **Cache**: Redis 7.4 for session and data caching
@@ -651,6 +648,7 @@ MediCareAI uses a **multi-platform architecture** where each role has dedicated 
 
 **中文:**
 - **前端**: React 18 + TypeScript + Vite，Material-UI v6 组件库，三端平台（患者/医生/管理员）
+- **Android 应用**: Jetpack Compose + Kotlin，MVVM 架构，Ktor 客户端，Hilt 依赖注入
 - **后端**: FastAPI (Python 3.12)，使用异步 SQLAlchemy ORM
 - **数据库**: PostgreSQL 17 用于数据持久化
 - **缓存**: Redis 7.4 用于会话和数据缓存
@@ -658,7 +656,6 @@ MediCareAI uses a **multi-platform architecture** where each role has dedicated 
 - **文档 AI**: MinerU API 用于智能文本提取
 - **云存储**: 阿里云 OSS 用于患者文档安全存储
 - **向量数据库**: Qwen API 用于知识库嵌入和语义搜索
-
 ---
 
 ## 📁 Project Structure | 项目结构
@@ -783,7 +780,32 @@ MediCareAI/
 │   ├── vite.config.ts            # Vite Config - Vite配置
 │   ├── eslint.config.js          # ESLint Config - ESLint配置
 │   ├── Dockerfile                # Frontend Container - 前端容器
-│   └── Dockerfile.prod           # Production Container - 生产容器
+│   ├── Dockerfile.prod           # Production Container - 生产容器
+├── 📁 android/                   # Android App - Android 应用 (Jetpack Compose + Kotlin)
+│   ├── 📁 app/
+│   │   ├── 📁 src/main/java/com/medicareai/patient/
+│   │   │   ├── 📁 ui/
+│   │   │   │   ├── 📁 screens/   # Screen Components - 屏幕组件
+│   │   │   │   │   ├── WelcomeScreen.kt       # Welcome - 欢迎页
+│   │   │   │   │   ├── LoginScreen.kt         # Login - 登录页
+│   │   │   │   │   ├── RegisterScreen.kt      # Register - 注册页
+│   │   │   │   │   ├── DashboardScreen.kt     # Dashboard - 首页
+│   │   │   │   │   ├── SymptomSubmitScreen.kt # Symptom Submit - 症状提交
+│   │   │   │   │   ├── MedicalRecordsScreen.kt# Medical Records - 诊疗记录
+│   │   │   │   │   ├── ProfileScreen.kt       # Profile - 个人中心
+│   │   │   │   │   └── LegalContent.kt        # Legal Content - 法律文档内容
+│   │   │   │   ├── 📁 theme/     # Theme - 主题
+│   │   │   │   └── 📁 components/# Components - 组件
+│   │   │   ├── 📁 viewmodel/     # ViewModels - 视图模型
+│   │   │   │   └── AuthViewModel.kt
+│   │   │   ├── 📁 network/       # Network - 网络
+│   │   │   │   └── ApiClient.kt  # API Client - API客户端
+│   │   │   └── MainActivity.kt   # Main Activity - 主活动
+│   │   ├── 📁 res/               # Resources - 资源文件
+│   │   └── build.gradle.kts      # App Build Config - 应用构建配置
+│   ├── build.gradle.kts          # Project Build Config - 项目构建配置
+│   ├── settings.gradle.kts       # Settings - 设置
+│   └── gradle.properties         # Gradle Properties - Gradle属性
 ├── 📁 docker/                    # Docker Config - Docker 配置
 │   ├── 📁 nginx/                 # Nginx Configuration - Nginx 配置
 │   │   └── ssl/                  # SSL Certificates - SSL 证书

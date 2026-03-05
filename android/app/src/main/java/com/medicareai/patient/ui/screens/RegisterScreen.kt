@@ -47,6 +47,8 @@ fun RegisterScreen(
     var showPassword by remember { mutableStateOf(false) }
     var showConfirmPassword by remember { mutableStateOf(false) }
     var termsAccepted by remember { mutableStateOf(false) }
+    var showTermsDialog by remember { mutableStateOf(false) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
     
     val registerState by viewModel.registerState.collectAsState()
     
@@ -353,9 +355,33 @@ fun RegisterScreen(
                             colors = CheckboxDefaults.colors(checkedColor = PrimaryBlue)
                         )
                         Text(
-                            text = stringResource(R.string.terms_agreement),
+                            text = "我已阅读并同意",
                             style = MaterialTheme.typography.bodySmall
                         )
+                        TextButton(
+                            onClick = { showTermsDialog = true },
+                            modifier = Modifier.padding(0.dp)
+                        ) {
+                            Text(
+                                text = "用户协议",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = PrimaryBlue
+                            )
+                        }
+                        Text(
+                            text = "和",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        TextButton(
+                            onClick = { showPrivacyDialog = true },
+                            modifier = Modifier.padding(0.dp)
+                        ) {
+                            Text(
+                                text = "隐私政策",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = PrimaryBlue
+                            )
+                        }
                     }
                     
                     Spacer(modifier = Modifier.height(24.dp))
@@ -428,5 +454,47 @@ fun RegisterScreen(
             
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+    
+    // Terms of Service Dialog
+    if (showTermsDialog) {
+        AlertDialog(
+            onDismissRequest = { showTermsDialog = false },
+            title = { Text("用户服务协议", color = PrimaryBlue) },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = LegalContent.TERMS_OF_SERVICE,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTermsDialog = false }) {
+                    Text("我已阅读并理解", color = PrimaryBlue)
+                }
+            }
+        )
+    }
+    
+    // Privacy Policy Dialog
+    if (showPrivacyDialog) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyDialog = false },
+            title = { Text("隐私保护政策", color = PrimaryBlue) },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = LegalContent.PRIVACY_POLICY,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPrivacyDialog = false }) {
+                    Text("我已阅读并理解", color = PrimaryBlue)
+                }
+            }
+        )
     }
 }

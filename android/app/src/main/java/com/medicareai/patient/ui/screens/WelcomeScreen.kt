@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.medicareai.patient.R
 import com.medicareai.patient.ui.theme.PrimaryBlue
 import com.medicareai.patient.ui.theme.PrimaryPurple
@@ -87,20 +88,28 @@ fun WelcomeScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "📋 关于 MediCareAI",
+                        text = "关于 MediCareAI 📋",
                         style = MaterialTheme.typography.titleMedium,
                         color = PrimaryBlue,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = stringResource(R.string.app_description),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.DarkGray,
-                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.3f
+                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight * 1.3f,
+                        textAlign = TextAlign.Justify,
+                        modifier = Modifier.fillMaxWidth(),
+                        letterSpacing = 0.3.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(

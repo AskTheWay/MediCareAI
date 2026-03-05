@@ -37,7 +37,8 @@ fun DashboardScreen(
 ) {
     val user by viewModel.currentUser.collectAsState()
     var showLogoutDialog by remember { mutableStateOf(false) }
-    
+    var showTermsDialog by remember { mutableStateOf(false) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         viewModel.checkAuthStatus()
     }
@@ -256,7 +257,7 @@ fun DashboardScreen(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Quick Stats
+            // Legal Information
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
@@ -275,7 +276,7 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "快速了解",
+                            text = "法律信息",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -283,18 +284,33 @@ fun DashboardScreen(
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        StatItem(
-                            icon = Icons.Default.LocalHospital,
-                            value = "AI",
-                            label = stringResource(R.string.ai_diagnosis)
+                        TextButton(
+                            onClick = { showTermsDialog = true }
+                        ) {
+                            Text(
+                                text = "用户协议",
+                                color = PrimaryBlue,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        
+                        Text(
+                            text = "|",
+                            color = Color.Gray,
+                            modifier = Modifier.padding(vertical = 8.dp)
                         )
-                        StatItem(
-                            icon = Icons.Default.Analytics,
-                            value = "智能",
-                            label = stringResource(R.string.smart_analysis)
-                        )
+                        
+                        TextButton(
+                            onClick = { showPrivacyDialog = true }
+                        ) {
+                            Text(
+                                text = "隐私政策",
+                                color = PrimaryBlue,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                 }
             }
@@ -331,6 +347,46 @@ fun DashboardScreen(
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+    
+    if (showTermsDialog) {
+        AlertDialog(
+            onDismissRequest = { showTermsDialog = false },
+            title = { Text("用户服务协议", color = PrimaryBlue) },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = LegalContent.TERMS_OF_SERVICE,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTermsDialog = false }) {
+                    Text("我已阅读并理解", color = PrimaryBlue)
+                }
+            }
+        )
+    }
+    
+    if (showPrivacyDialog) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyDialog = false },
+            title = { Text("隐私保护政策", color = PrimaryBlue) },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = LegalContent.PRIVACY_POLICY,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPrivacyDialog = false }) {
+                    Text("我已阅读并理解", color = PrimaryBlue)
                 }
             }
         )

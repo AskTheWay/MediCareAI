@@ -9,87 +9,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [3.2.0] - 2026-03-05
+
+### Android App UI 修复与法律文档 | Android App UI Fixes & Legal Documentation | 📱
+
+#### UI Bug 修复 UI Fixes | 🐛
+
+**1. 欢迎页标题居中修复 (Welcome Screen Title Centering)**
+- **问题**: "关于 MediCareAI" 标题和 emoji 视觉上偏左，未正确居中
+- **修复**: 
+  - 将 emoji "📋" 从标题开头移至末尾，改为 "关于 MediCareAI 📋"
+  - Column 添加 `horizontalAlignment = Alignment.CenterHorizontally`
+  - 标题 Text 组件添加 `textAlign = TextAlign.Center` 和 `fillMaxWidth()`
+  - 介绍文字添加 `textAlign = TextAlign.Justify` 实现两端对齐
+
+**2. 首页功能卡片间距修复 (Dashboard Feature Card Spacing)**
+- **问题**: 描述文字与右侧按钮间距过小，几乎贴在一起，不美观
+- **修复**:
+  - 移除 Row 的 `horizontalArrangement = Arrangement.SpaceBetween`（导致 Spacer 被压缩的元凶）
+  - 保留 `weight(1f)` 让文字区域自动占据剩余空间
+  - Spacer 宽度保持 16.dp，确保文字和按钮之间有舒适间距
+
+#### 新增功能 Features | ✨
+
+**1. 法律信息卡片 (Legal Information Card)**
+- **位置**: DashboardScreen 底部，"快速了解" 改为 "法律信息"
+- **功能**: 
+  - 显示两个可点击的文本链接：用户协议 | 隐私政策
+  - 点击后弹出 AlertDialog 显示完整法律文本
+  - 弹窗高度 400dp，支持滚动查看全部内容
+- **文件**: `LegalContent.kt` - 集中存储完整的法律文档内容
+
+**2. 注册页面法律链接 (Register Page Legal Links)**
+- **修改**: 将注册页面的协议复选框文本改为可点击链接
+- **显示**: "我已阅读并同意 [用户协议] 和 [隐私政策]"
+- **交互**: 点击链接弹出与首页相同的完整法律文档弹窗
+
+#### 法律文档内容 Legal Documents | 📜
+
+**用户服务协议 (Terms of Service)**
+- 8 个章节：术语定义、协议接受、用户注册、个人信息保护、用户行为规范、知识产权、免责声明、争议解决
+- 包含重要提示、AI 诊断免责声明、特别提示等关键条款
+- 与 Web 端注册页面的内容完全一致
+
+**隐私保护政策 (Privacy Policy)**
+- 10 个章节：政策更新、信息收集、敏感信息保护、信息共享、信息存储、用户权利、未成年人保护、数据跨境、联系我们
+- 详细说明健康信息（敏感个人信息）的特殊保护措施
+- 与 Web 端注册页面的内容完全一致
+
+#### 新增文件 Added Files
+- `android/app/src/main/java/com/medicareai/patient/ui/screens/LegalContent.kt` - 法律文档内容
+
+#### 变更 Changed
+- `android/app/src/main/java/com/medicareai/patient/ui/screens/WelcomeScreen.kt` - 标题居中对齐
+- `android/app/src/main/java/com/medicareai/patient/ui/screens/DashboardScreen.kt` - 间距修复，添加法律信息卡片和弹窗
+- `android/app/src/main/java/com/medicareai/patient/ui/screens/RegisterScreen.kt` - 添加可点击的法律链接和弹窗
+
 ---
 
 ## [3.1.5] - 2026-03-05
-
-### Bug 修复 Bug Fixes | 🐛
-
-#### 1. Mixed Content 错误修复 (HTTPS 重定向修复)
-
-**问题描述**
-- 患者端页面通过 HTTPS 加载时，API 请求返回的 307 重定向使用了 http:// 而非 https://
-- 浏览器阻止 Mixed Content 请求，导致"加载统计数据失败"错误
-- 错误信息: `Mixed Content: The page at 'https://openmedicareai.life/patient' was loaded over HTTPS, but requested an insecure XMLHttpRequest endpoint 'http://openmedicareai.life/api/v1/patients/'`
-
-**根本原因**
-- FastAPI 自动重定向（尾部斜杠）时生成的绝对 URL 使用了 http:// scheme
-- 虽然 Nginx 传递了 `X-Forwarded-Proto: https` 头，但 FastAPI 未正确处理
-- 后端生成重定向 URL 时使用了内部 HTTP 协议而非外部 HTTPS 协议
-
-**修复方案**
-- 在 `backend/app/main.py` 添加 `fix_https_redirects` 中间件
-- 拦截所有 301/302/307/308 重定向响应
-- 将 Location 头中的 `http://` 替换为 `https://`
-- 代码变更:
-  ```python
-  @app.middleware("http")
-  async def fix_https_redirects(request: Request, call_next):
-      response = await call_next(request)
-      if response.status_code in [301, 302, 307, 308]:
-          location = response.headers.get("location", "")
-          if location.startswith("http://"):
-              new_location = location.replace("http://", "https://", 1)
-              response.headers["location"] = new_location
-      return response
-  ```
-
-#### 2. ALLOWED_HOSTS 自动检测服务器 IP
-
-**问题描述**
-- Android App 使用 IP 地址直接访问后端 API 时返回 400 Bad Request
-- `ALLOWED_HOSTS` 环境变量只配置了域名，未包含服务器 IP 地址
-
-**修复方案**
-- 在 `backend/app/main.py` 添加 `get_server_ips()` 函数
-- 自动检测服务器所有 IP 地址并添加到 ALLOWED_HOSTS
-- 支持动态获取主机名、本地 IP、网络接口 IP
-
-#### 3. 前端 API 配置修复
-
-**问题描述**
-- 前端 `API_BASE` 配置可能被覆盖导致使用 http://
-
-**修复方案**
-- 修改 `frontend/src/lib/config.ts` 添加 `getApiBase()` 函数
-- 优先使用环境变量 `VITE_API_BASE_URL`
-- 默认使用空字符串（相对路径），通过 Nginx 代理访问 API
-
-### 新增功能 Features | ✨
-
-#### Android 患者端 App
-- 使用 Jetpack Compose + Kotlin 开发的 Android 应用
-- 功能模块:
-  - 欢迎页面（Logo + 项目简介 + 登录/注册）
-  - 患者登录/注册（支持邮箱验证）
-  - 个人中心（查看/编辑个人信息）
-  - 症状提交（描述症状并获取 AI 诊断）
-  - 诊疗记录（查看历史诊断记录）
-- 技术栈: Jetpack Compose, MVVM, Ktor, Hilt DI
-- 配色方案: #667eea → #764ba2 渐变（与 Web 端一致）
-
-### 文档更新 Documentation
-
-#### 新增文档
-- `docs/SSL_AUTO_RENEWAL.mdx` - Let's Encrypt SSL 证书自动续期完整指南
-- 新增 SSL 续期脚本 `/home/houge/renew-ssl.sh`
-- 配置 Crontab 定时任务（每月1号和15号检查续期）
-
-### 变更 Changed
-- `backend/app/main.py` - 添加 HTTPS 重定向修复中间件和 IP 自动检测
-- `frontend/src/lib/config.ts` - 改进 API_BASE 配置逻辑
-- `.env` - 添加服务器 IP 到 ALLOWED_HOSTS（由后端自动处理）
-
 ---
 
 ## [3.1.4] - 2026-03-03
