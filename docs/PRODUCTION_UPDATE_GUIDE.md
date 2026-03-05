@@ -242,7 +242,10 @@ docker-compose -f docker-compose.prod.yml up -d --build
 
 ## 📚 参考文档
 
-- [PRODUCTION_DEPLOYMENT.mdx](./docs/PRODUCTION_DEPLOYMENT.mdx) - 生产环境部署指南
+- [PRODUCTION_DEPLOYMENT.mdx](./PRODUCTION_DEPLOYMENT.mdx) - 生产环境部署指南
+- [README.md](../README.md) - 项目说明
+- [TROUBLESHOOTING.mdx](./TROUBLESHOOTING.mdx) - 故障排除指南
+- [SSL_AUTO_RENEWAL.mdx](./SSL_AUTO_RENEWAL.mdx) - SSL 自动续期指南
 - [README.md](./README.md) - 项目说明
 - [TROUBLESHOOTING.mdx](./docs/TROUBLESHOOTING.mdx) - 故障排除指南
 

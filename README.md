@@ -396,6 +396,18 @@ chmod 600 docker/nginx/ssl/key.pem
 echo "0 12 * * * /usr/bin/certbot renew --quiet" | sudo crontab -
 ```
 
+> **📘 SSL 自动续期配置指南 | SSL Auto-Renewal Guide**
+>
+> Let's Encrypt 证书有效期仅 90 天，**强烈建议配置自动续期**。
+>
+> 详细配置步骤请参考：[docs/SSL_AUTO_RENEWAL.mdx](docs/SSL_AUTO_RENEWAL.mdx)
+>
+> **SSL Auto-renewal is strongly recommended** as Let's Encrypt certificates expire every 90 days.
+>
+> See [docs/SSL_AUTO_RENEWAL.mdx](docs/SSL_AUTO_RENEWAL.mdx) for complete setup instructions.
+
+**Option B: Self-Signed (Testing Only) | 方式 B: 自签名证书 (仅测试)**
+
 **Option B: Self-Signed (Testing Only) | 方式 B: 自签名证书 (仅测试)**
 
 ```bash
