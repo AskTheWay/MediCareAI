@@ -65,6 +65,17 @@ apiClient.interceptors.response.use(
   async (error: AxiosError<ApiResponse<unknown>>) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
 
+    // Skip redirect for login requests - login failures should stay on current page
+    // 跳过登录请求的重定向 - 登录失败应该保留在当前页面
+    const isLoginRequest = originalRequest.url?.includes('/auth/login');
+    if (isLoginRequest && error.response?.status === 401) {
+      // Return the error without redirect for login failures
+      // 对于登录失败，直接返回错误而不重定向
+      const responseData = error.response?.data as ApiErrorResponse;
+      const errorMessage = responseData?.detail || responseData?.message || '登录失败 / Login failed';
+      return Promise.reject(new Error(errorMessage));
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
@@ -99,7 +110,27 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch {
         useAuthStore.getState().logout();
-        window.location.href = '/login';
+        
+        // Determine redirect URL based on current platform
+        // 根据当前平台决定重定向URL
+        const port = window.location.port || '80';
+        const currentPath = window.location.pathname;
+        
+        // Don't redirect if already on a login page
+        // 如果已经在登录页面，则不重定向
+        if (currentPath.includes('login')) {
+          return Promise.reject(error);
+        }
+        
+        // Redirect to appropriate login page based on port/platform
+        // 根据端口/平台重定向到相应的登录页面
+        if (port === '8080' || currentPath.startsWith('/admin')) {
+          window.location.href = '/admin-login';
+        } else if (port === '8081' || currentPath.startsWith('/doctor')) {
+          window.location.href = '/doctor-login';
+        } else {
+          window.location.href = '/login';
+        }
         return Promise.reject(error);
       }
     }
