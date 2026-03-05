@@ -185,6 +185,30 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def fix_https_redirects(request: Request, call_next):
+    """
+    Fix redirect URLs to use HTTPS when behind reverse proxy.
+    This ensures auto-redirects (e.g., trailing slashes) use correct scheme.
+    """
+    response = await call_next(request)
+    
+    # Fix redirect responses to use HTTPS
+    if response.status_code in [301, 302, 307, 308]:
+        location = response.headers.get("location", "")
+        # Check if location starts with http://
+        if location.startswith("http://"):
+            # Replace with https://
+            new_location = location.replace("http://", "https://", 1)
+            response.headers["location"] = new_location
+            logger.debug(f"Fixed redirect: {location} -> {new_location}")
+    
+    return response
+
+
+# Add Prometheus monitoring middleware
+
+
 # Add Prometheus monitoring middleware
 app.add_middleware(PrometheusMiddleware)
 
