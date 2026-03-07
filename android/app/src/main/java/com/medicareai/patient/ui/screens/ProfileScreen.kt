@@ -37,7 +37,9 @@ fun ProfileScreen(
     var gender by remember { mutableStateOf("") }
     var dateOfBirth by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
-    var emergencyContact by remember { mutableStateOf("") }
+    // 问题1修复：使用分离的紧急联系人字段
+    var emergencyContactName by remember { mutableStateOf("") }
+    var emergencyContactPhone by remember { mutableStateOf("") }
     
     LaunchedEffect(Unit) {
         viewModel.loadProfile()
@@ -51,7 +53,21 @@ fun ProfileScreen(
             gender = patient.gender ?: ""
             dateOfBirth = patient.date_of_birth ?: ""
             address = patient.address ?: ""
-            emergencyContact = patient.emergency_contact ?: ""
+            // 问题1修复：优先读取分离字段，否则解析组合字段
+            emergencyContactName = patient.emergency_contact_name ?: ""
+            emergencyContactPhone = patient.emergency_contact_phone ?: ""
+            // 如果分离字段为空，尝试解析组合字段（向后兼容）
+            if (emergencyContactName.isEmpty() && emergencyContactPhone.isEmpty()) {
+                patient.emergency_contact?.let { contact ->
+                    val parts = contact.split(" ")
+                    if (parts.isNotEmpty()) {
+                        emergencyContactName = parts[0]
+                    }
+                    if (parts.size >= 2) {
+                        emergencyContactPhone = parts[1]
+                    }
+                }
+            }
         }
     }
     
@@ -220,11 +236,20 @@ fun ProfileScreen(
                                     enabled = isEditing
                                 )
                                 
+                                // 问题1修复：分离的紧急联系人字段
                                 ProfileField(
-                                    label = "紧急联系人",
-                                    value = emergencyContact,
-                                    onValueChange = { emergencyContact = it },
+                                    label = "紧急联系人姓名",
+                                    value = emergencyContactName,
+                                    onValueChange = { emergencyContactName = it },
                                     icon = Icons.Default.ContactPhone,
+                                    enabled = isEditing
+                                )
+                                
+                                ProfileField(
+                                    label = "紧急联系人电话",
+                                    value = emergencyContactPhone,
+                                    onValueChange = { emergencyContactPhone = it },
+                                    icon = Icons.Default.Phone,
                                     enabled = isEditing
                                 )
                             }
@@ -240,7 +265,9 @@ fun ProfileScreen(
                                             gender = gender.takeIf { it.isNotEmpty() },
                                             phone = phone.takeIf { it.isNotEmpty() },
                                             address = address.takeIf { it.isNotEmpty() },
-                                            emergency_contact = emergencyContact.takeIf { it.isNotEmpty() }
+                                            // 问题1修复：发送分离的紧急联系人字段
+                                            emergency_contact_name = emergencyContactName.takeIf { it.isNotEmpty() },
+                                            emergency_contact_phone = emergencyContactPhone.takeIf { it.isNotEmpty() }
                                         )
                                     )
                                     isEditing = false
