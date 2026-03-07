@@ -49,15 +49,15 @@ class PatientService:
                     detail="Medical record number already exists"
                 )
 
-        # 注意：name 字段现在从 User 表获取，不在 Patient 表中存储
-        # 这里保留 name 字段用于向后兼容，但设置为空
+        # 注意：name 和 address 字段现在从 User 表获取，不在 Patient 表中存储
+        # 这里不再存储 address，统一使用 User 表的 address 字段
         db_patient = Patient(
             user_id=user_id,
             name=None,  # 从 User 表动态获取，避免数据冗余
-            date_of_birth=patient_data.date_of_birth,  # 直接使用 date 对象
+            date_of_birth=patient_data.date_of_birth,
             gender=patient_data.gender,
             phone=patient_data.phone,
-            address=patient_data.address,
+            address=None,  # 问题4修复：地址统一存储在 User 表
             emergency_contact=patient_data.emergency_contact,
             medical_record_number=patient_data.medical_record_number
         )
@@ -73,7 +73,6 @@ class PatientService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Error creating patient"
             )
-
     async def update_patient(
         self, 
         patient_id: uuid.UUID, 
@@ -101,11 +100,16 @@ class PatientService:
                 )
 
         update_data = patient_data.model_dump(exclude_unset=True)
+        
+        # 问题4修复：地址统一存储在 User 表，不再更新 Patient 表的 address
+        # address 字段将在 API 层直接更新 User 表
+        if 'address' in update_data:
+            del update_data['address']
+        
         # date_of_birth 已经是 date 对象，不需要转换
 
         for field, value in update_data.items():
             setattr(patient, field, value)
-
         try:
             await self.db.commit()
             await self.db.refresh(patient)

@@ -36,9 +36,10 @@ def _enrich_patient_response(patient, user: User) -> dict:
         "date_of_birth": patient.date_of_birth,
         "gender": patient.gender,
         "phone": patient.phone,
-        "address": patient.address,
-        # 紧急联系人信息优先从 User 表获取（新的分离字段）
-        "emergency_contact": user.emergency_contact if user.emergency_contact else patient.emergency_contact,
+        # 地址统一从 User 表获取（问题4修复：消除数据冗余）
+        "address": user.address,
+        # 紧急联系人信息从 User 表获取
+        "emergency_contact": user.emergency_contact,
         "emergency_contact_name": user.emergency_contact_name,
         "emergency_contact_phone": user.emergency_contact_phone,
         "medical_record_number": patient.medical_record_number,
@@ -72,7 +73,9 @@ async def update_my_patient(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
-    """更新当前用户的患者信息（主档案）"""
+    """更新当前用户的患者信息（主档案）
+    
+    注意：地址信息现在统一存储在 User 表中"""
     patient_service = PatientService(db)
     patients = await patient_service.get_patients_by_user(
         current_user.id, skip=0, limit=1
@@ -81,9 +84,19 @@ async def update_my_patient(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Patient profile not found"
         )
+    
+    # 如果提供了地址，同时更新 User 表的地址（问题4修复：统一数据源）
+    if patient_data.address is not None:
+        current_user.address = patient_data.address
+        await db.commit()
+    
     patient = await patient_service.update_patient(
         patients[0].id, patient_data, current_user.id
     )
+    
+    # 刷新 user 对象以获取最新数据
+    await db.refresh(current_user)
+    
     return _enrich_patient_response(patient, current_user)
 
 
@@ -143,10 +156,22 @@ async def update_patient(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
+    """更新指定患者信息"
+    
+    注意：地址信息现在统一存储在 User 表中"""
     patient_service = PatientService(db)
+    
+    # 如果提供了地址，同时更新 User 表的地址
+    if patient_data.address is not None:
+        current_user.address = patient_data.address
+        await db.commit()
+    
     patient = await patient_service.update_patient(
         patient_id, patient_data, current_user.id
     )
+    
+    await db.refresh(current_user)
+    
     return _enrich_patient_response(patient, current_user)
 
 

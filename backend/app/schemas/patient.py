@@ -21,11 +21,14 @@ class PatientCreate(PatientBase):
 
 
 class PatientUpdate(BaseModel):
-    """更新患者信息 - 不允许修改 name，name 应该在 User 表中修改"""
+    """更新患者信息 - 不允许修改 name，name 应该在 User 表中修改
+    
+    注意：address 字段现在统一存储在 User 表中（问题4修复）", """
     date_of_birth: Optional[date] = None
     gender: Optional[str] = Field(None, pattern="^(male|female)$")
     phone: Optional[str] = Field(None, max_length=20)
-    address: Optional[str] = None
+    # 问题4修复：address 现在从 User 表获取，但仍保留在 schema 中以兼容现有 API
+    address: Optional[str] = Field(None, description="地址现在统一存储在 User 表中")
     emergency_contact: Optional[str] = Field(None, max_length=255)
     medical_record_number: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = None
