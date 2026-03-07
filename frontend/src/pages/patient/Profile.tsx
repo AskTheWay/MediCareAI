@@ -104,8 +104,13 @@ const Profile: React.FC = () => {
       if (patientData.gender) setGender(patientData.gender);
       if (patientData.phone) setPhone(patientData.phone);
       
-      // Parse emergency contact
-      if (patientData.emergency_contact) {
+      // Parse emergency contact - 优先读取分离字段（问题1修复）
+      if (patientData.emergency_contact_name || patientData.emergency_contact_phone) {
+        // 使用分离的字段
+        if (patientData.emergency_contact_name) setEmergencyContactName(patientData.emergency_contact_name);
+        if (patientData.emergency_contact_phone) setEmergencyContactPhone(patientData.emergency_contact_phone);
+      } else if (patientData.emergency_contact) {
+        // 回退：解析组合字段（向后兼容）
         const parts = patientData.emergency_contact.split(' ');
         if (parts.length >= 1) setEmergencyContactName(parts[0]);
         if (parts.length >= 2) setEmergencyContactPhone(parts[1]);
