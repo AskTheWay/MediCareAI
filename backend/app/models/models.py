@@ -1591,6 +1591,8 @@ class Patient(Base):
 
     此模型保留用于迁移期间的向后兼容。
     新代码应使用 role='patient' 的 User 模型。
+
+    注意：address 字段已移除，统一使用 User 表的 address 字段（问题4修复）
     """
 
     __tablename__ = "patients"
@@ -1603,7 +1605,7 @@ class Patient(Base):
     date_of_birth = Column(Date, nullable=True)
     gender = Column(String(10))
     phone = Column(String(20))
-    address = Column(Text)
+    # address 字段已删除 - 统一使用 User 表的 address（问题4修复）
     emergency_contact = Column(String(255))
     medical_record_number = Column(String(100), unique=True)
     notes = Column(Text)
@@ -1612,7 +1614,6 @@ class Patient(Base):
 
     # Mark as deprecated in migration script
     __table_args__ = ({"comment": "DEPRECATED: Use users table with role=patient"},)
-
 
 # Export all models
 __all__ = [
