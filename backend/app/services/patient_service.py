@@ -12,16 +12,17 @@ class PatientService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_patient_by_id(self, patient_id: uuid.UUID, user_id: uuid.UUID) -> Patient | None:
-        stmt = select(Patient).where(Patient.id == patient_id, Patient.user_id == user_id)
+    async def get_patient_by_id(
+        self, patient_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Patient | None:
+        stmt = select(Patient).where(
+            Patient.id == patient_id, Patient.user_id == user_id
+        )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_patients_by_user(
-        self, 
-        user_id: uuid.UUID, 
-        skip: int = 0, 
-        limit: int = 20
+        self, user_id: uuid.UUID, skip: int = 0, limit: int = 20
     ) -> list[Patient]:
         stmt = (
             select(Patient)
@@ -38,15 +39,19 @@ class PatientService:
         result = await self.db.execute(stmt)
         return result.scalar()
 
-    async def create_patient(self, patient_data: PatientCreate, user_id: uuid.UUID) -> Patient:
+    async def create_patient(
+        self, patient_data: PatientCreate, user_id: uuid.UUID
+    ) -> Patient:
         # 检查病历号是否已存在
         if patient_data.medical_record_number:
-            stmt = select(Patient).where(Patient.medical_record_number == patient_data.medical_record_number)
+            stmt = select(Patient).where(
+                Patient.medical_record_number == patient_data.medical_record_number
+            )
             result = await self.db.execute(stmt)
             if result.scalar_one_or_none():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Medical record number already exists"
+                    detail="Medical record number already exists",
                 )
 
         # 注意：name 和 address 字段现在从 User 表获取，不在 Patient 表中存储
@@ -58,16 +63,7 @@ class PatientService:
             gender=patient_data.gender,
             phone=patient_data.phone,
             emergency_contact=patient_data.emergency_contact,
-            medical_record_number=patient_data.medical_record_number
-        )
-            user_id=user_id,
-            name=None,  # 从 User 表动态获取，避免数据冗余
-            date_of_birth=patient_data.date_of_birth,
-            gender=patient_data.gender,
-            phone=patient_data.phone,
-            address=None,  # 问题4修复：地址统一存储在 User 表
-            emergency_contact=patient_data.emergency_contact,
-            medical_record_number=patient_data.medical_record_number
+            medical_record_number=patient_data.medical_record_number,
         )
 
         try:
@@ -78,42 +74,41 @@ class PatientService:
         except IntegrityError:
             await self.db.rollback()
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Error creating patient"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Error creating patient"
             )
+
     async def update_patient(
-        self, 
-        patient_id: uuid.UUID, 
-        patient_data: PatientUpdate, 
-        user_id: uuid.UUID
+        self, patient_id: uuid.UUID, patient_data: PatientUpdate, user_id: uuid.UUID
     ) -> Patient:
         patient = await self.get_patient_by_id(patient_id, user_id)
         if not patient:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Patient not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
             )
 
         # 检查病历号是否已被其他患者使用
-        if patient_data.medical_record_number and patient_data.medical_record_number != patient.medical_record_number:
+        if (
+            patient_data.medical_record_number
+            and patient_data.medical_record_number != patient.medical_record_number
+        ):
             stmt = select(Patient).where(
                 Patient.medical_record_number == patient_data.medical_record_number,
-                Patient.id != patient_id
+                Patient.id != patient_id,
             )
             result = await self.db.execute(stmt)
             if result.scalar_one_or_none():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Medical record number already exists"
+                    detail="Medical record number already exists",
                 )
 
         update_data = patient_data.model_dump(exclude_unset=True)
-        
+
         # 问题4修复：地址统一存储在 User 表，不再更新 Patient 表的 address
         # address 字段将在 API 层直接更新 User 表
-        if 'address' in update_data:
-            del update_data['address']
-        
+        if "address" in update_data:
+            del update_data["address"]
+
         # date_of_birth 已经是 date 对象，不需要转换
 
         for field, value in update_data.items():
@@ -125,27 +120,27 @@ class PatientService:
         except IntegrityError:
             await self.db.rollback()
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Error updating patient"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Error updating patient"
             )
 
     async def delete_patient(self, patient_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         patient = await self.get_patient_by_id(patient_id, user_id)
         if not patient:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Patient not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found"
             )
 
         # 检查是否有关联的病例
-        stmt = select(func.count(MedicalCase.id)).where(MedicalCase.patient_id == patient_id)
+        stmt = select(func.count(MedicalCase.id)).where(
+            MedicalCase.patient_id == patient_id
+        )
         result = await self.db.execute(stmt)
         cases_count = result.scalar()
-        
+
         if cases_count > 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete patient with {cases_count} associated medical cases"
+                detail=f"Cannot delete patient with {cases_count} associated medical cases",
             )
 
         try:
@@ -156,5 +151,5 @@ class PatientService:
             await self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error deleting patient"
+                detail="Error deleting patient",
             )
