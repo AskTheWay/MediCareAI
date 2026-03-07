@@ -75,7 +75,7 @@ async def update_my_patient(
 ) -> PatientResponse:
     """更新当前用户的患者信息（主档案）
     
-    注意：地址信息现在统一存储在 User 表中"""
+    注意：地址和紧急联系人信息现在统一存储在 User 表中"""
     patient_service = PatientService(db)
     patients = await patient_service.get_patients_by_user(
         current_user.id, skip=0, limit=1
@@ -85,10 +85,33 @@ async def update_my_patient(
             status_code=status.HTTP_404_NOT_FOUND, detail="Patient profile not found"
         )
     
-    # 如果提供了地址，同时更新 User 表的地址（问题4修复：统一数据源）
+    # 问题4修复：如果提供了地址，同时更新 User 表的地址
     if patient_data.address is not None:
         current_user.address = patient_data.address
-        await db.commit()
+    
+    # 问题1修复：如果提供了紧急联系人，拆分为 name 和 phone 保存到 User 表
+    if patient_data.emergency_contact is not None:
+        # 解析 emergency_contact 格式: "姓名 电话" 或 "姓名" 或 "电话"
+        parts = patient_data.emergency_contact.strip().split()
+        if len(parts) >= 2:
+            # 假设最后一部分是电话，前面是姓名
+            current_user.emergency_contact_phone = parts[-1]
+            current_user.emergency_contact_name = " ".join(parts[:-1])
+        elif len(parts) == 1:
+            # 只有一个部分，判断是电话还是姓名
+            if parts[0].isdigit() or parts[0].startswith('1') and len(parts[0]) == 11:
+                # 可能是电话号码
+                current_user.emergency_contact_phone = parts[0]
+            else:
+                # 可能是姓名
+                current_user.emergency_contact_name = parts[0]
+        else:
+            # 空字符串，清空字段
+            current_user.emergency_contact_name = None
+            current_user.emergency_contact_phone = None
+    
+    # 提交 User 表的更改
+    await db.commit()
     
     patient = await patient_service.update_patient(
         patients[0].id, patient_data, current_user.id
@@ -129,8 +152,36 @@ async def create_patient(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
+    """创建患者档案
+    
+    注意：地址和紧急联系人信息统一存储在 User 表中"""
     patient_service = PatientService(db)
+    
+    # 问题4修复：如果提供了地址，更新 User 表
+    if patient_data.address is not None:
+        current_user.address = patient_data.address
+    
+    # 问题1修复：如果提供了紧急联系人，拆分为 name 和 phone 保存到 User 表
+    if patient_data.emergency_contact is not None:
+        parts = patient_data.emergency_contact.strip().split()
+        if len(parts) >= 2:
+            current_user.emergency_contact_phone = parts[-1]
+            current_user.emergency_contact_name = " ".join(parts[:-1])
+        elif len(parts) == 1:
+            if parts[0].isdigit() or (parts[0].startswith('1') and len(parts[0]) == 11):
+                current_user.emergency_contact_phone = parts[0]
+            else:
+                current_user.emergency_contact_name = parts[0]
+        else:
+            current_user.emergency_contact_name = None
+            current_user.emergency_contact_phone = None
+    
+    await db.commit()
+    
     patient = await patient_service.create_patient(patient_data, current_user.id)
+    
+    await db.refresh(current_user)
+    
     return _enrich_patient_response(patient, current_user)
 
 
@@ -156,15 +207,32 @@ async def update_patient(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> PatientResponse:
-    """更新指定患者信息"
+    """更新指定患者信息
     
-    注意：地址信息现在统一存储在 User 表中"""
+    注意：地址和紧急联系人信息现在统一存储在 User 表中"""
     patient_service = PatientService(db)
     
-    # 如果提供了地址，同时更新 User 表的地址
+    # 问题4修复：如果提供了地址，更新 User 表
     if patient_data.address is not None:
         current_user.address = patient_data.address
-        await db.commit()
+    
+    # 问题1修复：如果提供了紧急联系人，拆分为 name 和 phone 保存到 User 表
+    if patient_data.emergency_contact is not None:
+        parts = patient_data.emergency_contact.strip().split()
+        if len(parts) >= 2:
+            current_user.emergency_contact_phone = parts[-1]
+            current_user.emergency_contact_name = " ".join(parts[:-1])
+        elif len(parts) == 1:
+            if parts[0].isdigit() or (parts[0].startswith('1') and len(parts[0]) == 11):
+                current_user.emergency_contact_phone = parts[0]
+            else:
+                current_user.emergency_contact_name = parts[0]
+        else:
+            current_user.emergency_contact_name = None
+            current_user.emergency_contact_phone = None
+    
+    # 提交 User 表的更改
+    await db.commit()
     
     patient = await patient_service.update_patient(
         patient_id, patient_data, current_user.id
