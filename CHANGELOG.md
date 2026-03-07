@@ -9,6 +9,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [3.4.0] - 2026-03-08
+
+### 患者注册与档案管理综合修复 | Patient Registration & Profile Management Fixes | 🐛🔧
+
+#### 关键修复 Critical Fixes | 🐛
+
+**1. Android 注册字段未发送修复**
+- **问题**: Android App 注册时只发送 email 和 full_name，其他字段丢失
+- **原因**: Ktor 客户端未显式设置 Content-Type 头部导致 JSON 序列化不完整
+- **修复**: 在 `MediCareApiClient.kt` 的 `makeRequest()` 中添加 `contentType(ContentType.Application.Json)`
+
+**2. 患者档案自动创建 500 错误修复**
+- **问题**: 新用户访问"个人中心"时报 500 Internal Server Error
+- **原因**: 
+  - `Patient` 模型已移除 `address` 字段，但 `patient_service.py` 仍尝试传入 `address=None`
+  - 代码缩进错误导致 Python 语法错误 (IndentationError)
+- **修复**:
+  - 从 `create_patient()` 中移除 `address` 参数
+  - 完全重写 `patient_service.py` 修复缩进错误
+
+**3. 注册时患者档案创建逻辑修复**
+- **问题**: 注册成功但数据库中缺少患者档案
+- **修复**: 修改 `auth.py` 注册端点，确保总是创建 `Patient` 档案
+
+#### 数据模型优化 Data Model Optimizations | 🏗️
+
+**1. 地址字段统一存储**
+- `Patient` 模型移除 `address` 字段
+- 地址统一存储在 `User` 表的 `address` 字段
+- 消除数据冗余，避免同步问题
+
+**2. 紧急联系人字段分离**
+- 新增 `emergency_contact_name` 和 `emergency_contact_phone` 字段
+- 替代原有的 `emergency_contact` 合并字段
+- 前后端同步更新支持新字段
+
+#### 新增功能 Features | ✨
+
+**Android App**
+- **省市区地址选择器**: 三级联动地址选择组件
+- **日期选择器**: 出生日期选择组件
+- **文件上传功能**: 支持检查资料上传（PDF、图片等）
+- **流式 AI 诊断**: SSE 实时流式诊断输出
+- **@医生提及**: 症状提交时可选择分享给医生
+
+**后端 Backend**
+- **自动创建患者档案**: GET `/patients/me` 时如不存在则自动创建
+- **详细错误日志**: 患者档案创建失败时记录完整 traceback
+
+#### 修改文件清单 Modified Files
+
+| 文件路径 | 修改类型 | 说明 |
+|---------|---------|------|
+| `android/app/src/main/java/.../MediCareApiClient.kt` | 修复 | 添加 Content-Type 头部 |
+| `android/app/src/main/java/.../RegisterScreen.kt` | 新增 | 省市区选择器、日期选择器 |
+| `android/app/src/main/java/.../AddressPickerField.kt` | 新增 | 地址选择组件 |
+| `android/app/src/main/java/.../DatePickerField.kt` | 新增 | 日期选择组件 |
+| `android/app/src/main/java/.../SymptomSubmitScreen.kt` | 重构 | 流式诊断、文件上传 |
+| `android/app/src/main/java/.../Models.kt` | 修改 | 添加紧急联系人分离字段 |
+| `backend/app/services/patient_service.py` | 重写 | 修复缩进错误，移除 address 字段 |
+| `backend/app/api/api_v1/endpoints/patients.py` | 修改 | 自动创建患者档案，详细日志 |
+| `backend/app/api/api_v1/endpoints/auth.py` | 修改 | 始终创建患者档案 |
+| `backend/app/schemas/user.py` | 修改 | 添加紧急联系人分离字段 |
+| `backend/app/models/models.py` | 修改 | 移除 Patient.address 字段 |
+
+---
+
 ## [3.3.0] - 2026-03-07
 
 ### Android 症状提交功能全面升级 | Android Symptom Submission Major Upgrade | 📱
