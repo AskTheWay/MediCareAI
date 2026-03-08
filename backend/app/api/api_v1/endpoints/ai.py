@@ -349,7 +349,7 @@ async def comprehensive_diagnosis(
                     if patient.date_of_birth
                     else None,
                     "phone": patient.phone,
-                    "address": patient.address,
+                    "address": current_user.address,
                     "emergency_contact": patient.emergency_contact,
                     "notes": patient.notes,
                 }
@@ -605,7 +605,7 @@ async def comprehensive_diagnosis_stream(
                     if patient.date_of_birth
                     else None,
                     "phone": patient.phone,
-                    "address": patient.address,
+                    "address": current_user.address,
                     "emergency_contact": patient.emergency_contact,
                     "notes": patient.notes,
                 }
