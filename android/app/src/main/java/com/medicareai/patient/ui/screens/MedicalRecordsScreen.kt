@@ -19,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.halilibo.richtext.markdown.Markdown
+import com.halilibo.richtext.ui.material3.RichText
 import com.medicareai.patient.R
 import com.medicareai.patient.data.model.MedicalCase
 import com.medicareai.patient.ui.theme.PrimaryBlue
@@ -26,7 +28,6 @@ import com.medicareai.patient.viewmodel.MedicalRecordsViewModel
 import com.medicareai.patient.viewmodel.UiState
 import java.text.SimpleDateFormat
 import java.util.*
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MedicalRecordsScreen(
@@ -238,17 +239,17 @@ private fun MedicalCaseCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFF5F5F5)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
-                    Text(
-                        text = case.diagnosis.take(100) + if (case.diagnosis.length > 100) "..." else "",
-                        modifier = Modifier.padding(8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.DarkGray,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // 使用 RichText 渲染 Markdown 诊断摘要
+                    RichText(
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Markdown(
+                            content = case.diagnosis.take(100) + if (case.diagnosis.length > 100) "..." else ""
+                        )
+                    }
                 }
             }
             
@@ -298,7 +299,7 @@ private fun CaseDetailDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFF5F5F5)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -355,14 +356,15 @@ private fun CaseDetailDialog(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFFF0F8FF)
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
                         )
                     ) {
-                        Text(
-                            text = case.diagnosis,
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        // 使用 RichText 渲染 Markdown 诊断结果
+                        RichText(
+                            modifier = Modifier.padding(12.dp)
+                        ) {
+                            Markdown(content = case.diagnosis)
+                        }
                     }
                 }
             }

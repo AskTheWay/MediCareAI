@@ -1,5 +1,6 @@
 package com.medicareai.patient.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,6 +41,7 @@ fun DashboardScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showTermsDialog by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showQrCodeDialog by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         viewModel.checkAuthStatus()
     }
@@ -265,9 +268,13 @@ fun DashboardScreen(
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
+                    // Centered title with larger font
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
@@ -277,8 +284,8 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "法律信息",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                     
@@ -298,7 +305,7 @@ fun DashboardScreen(
                         
                         Text(
                             text = "|",
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
                         
@@ -315,13 +322,46 @@ fun DashboardScreen(
                 }
             }
             
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Support Open Source
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                onClick = { showQrCodeDialog = true }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "支持 MediCareAI 开源项目",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+            
             Spacer(modifier = Modifier.height(24.dp))
             
             // Footer
             Text(
                 text = "MediCareAI 使用先进的 AI 技术为您提供智能诊疗建议。\n本系统仅供参考，请以医生的实际诊断为准。\n作者：苏业钦 | License: MIT",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -391,6 +431,51 @@ fun DashboardScreen(
             }
         )
     }
+    
+    // QR Code Dialog for donations
+    if (showQrCodeDialog) {
+        AlertDialog(
+            onDismissRequest = { showQrCodeDialog = false },
+            title = { 
+                Text(
+                    "支持 MediCareAI", 
+                    color = PrimaryBlue,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                ) 
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "微信扫码支持开源项目",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    Image(
+                        painter = painterResource(id = R.drawable.qrcode),
+                        contentDescription = "微信支付二维码",
+                        modifier = Modifier
+                            .size(280.dp)
+                            .padding(8.dp)
+                    )
+                    Text(
+                        text = "截图保存二维码，在微信中扫一扫",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQrCodeDialog = false }) {
+                    Text("关闭", color = PrimaryBlue)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -414,7 +499,7 @@ private fun NavButton(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = if (isError) MaterialTheme.colorScheme.error else Color.Gray
+            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -461,7 +546,7 @@ private fun FeatureCard(
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             
@@ -504,7 +589,7 @@ private fun StatItem(
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

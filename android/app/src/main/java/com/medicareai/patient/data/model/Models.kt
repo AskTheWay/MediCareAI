@@ -14,7 +14,9 @@ data class User(
     val gender: String? = null,
     val phone: String? = null,
     val address: String? = null,
-    val emergency_contact: String? = null
+    val emergency_contact: String? = null,
+    val emergency_contact_name: String? = null,  // 分离字段
+    val emergency_contact_phone: String? = null  // 分离字段
 )
 
 @Serializable

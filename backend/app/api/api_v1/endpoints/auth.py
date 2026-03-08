@@ -246,6 +246,7 @@ async def logout(
 @router.get("/me")
 async def get_current_user_info(
     current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     获取当前用户信息
@@ -253,6 +254,26 @@ async def get_current_user_info(
     """
     current_platform = getattr(current_user, "_platform", "patient")
 
+    # 对于患者，同时查询 Patient 表获取完整信息
+    patient_data = {}
+    if current_user.role == "patient":
+        from sqlalchemy import select
+        from app.models.models import Patient
+        
+        stmt = select(Patient).where(Patient.user_id == current_user.id)
+        result = await db.execute(stmt)
+        patient = result.scalar_one_or_none()
+        
+        if patient:
+            patient_data = {
+                "date_of_birth": patient.date_of_birth.isoformat() if patient.date_of_birth else None,
+                "gender": patient.gender,
+                "phone": patient.phone,
+                "address": current_user.address,
+                "emergency_contact": patient.emergency_contact,
+                "emergency_contact_name": current_user.emergency_contact_name,
+                "emergency_contact_phone": current_user.emergency_contact_phone,
+            }
     return {
         "id": str(current_user.id),
         "email": current_user.email,
@@ -269,7 +290,7 @@ async def get_current_user_info(
         },
         # Include role-specific fields
         **(
-            {
+            patient_data if current_user.role == "patient" and patient_data else {
                 "date_of_birth": current_user.date_of_birth.isoformat()
                 if current_user.date_of_birth
                 else None,
@@ -277,6 +298,8 @@ async def get_current_user_info(
                 "phone": current_user.phone,
                 "address": current_user.address,
                 "emergency_contact": current_user.emergency_contact,
+                "emergency_contact_name": current_user.emergency_contact_name,
+                "emergency_contact_phone": current_user.emergency_contact_phone,
             }
             if current_user.role == "patient"
             else {}
@@ -302,7 +325,6 @@ async def get_current_user_info(
             else {}
         ),
     }
-
 
 @router.put("/me")
 async def update_current_user_info(
