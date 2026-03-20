@@ -168,3 +168,19 @@ override.*
 
 # Android data/local exception (TokenManager storage)
 !android/**/data/local/
+
+# Android Keystore files - NEVER commit to git
+*.keystore
+*.jks
+android/app/*.keystore
+android/app/*.jks
+
+# Android local properties
+android/local.properties
+
+# APK files - build artifacts
+*.apk
+MediCareAI-*.apk
+
+# Release signing info with sensitive data
+RELEASE_INFO.md

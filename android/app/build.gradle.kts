@@ -25,6 +25,15 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"https://openmedicareai.life/api/v1/\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("medicareai-release.keystore")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: "medicareai"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -32,6 +41,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = if (System.getenv("KEYSTORE_PASSWORD") != null) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
         }
     }
     compileOptions {

@@ -24,9 +24,5 @@
             <certificates src="system"/>
             <certificates src="user"/>
         </trust-anchors>
-        <!-- Disable certificate pinning for development -->
-        <pin-set expiration="2099-12-31">
-        </pin-set>
-        <certificates src="@raw/debug_certs" overridePins="true"/>
     </domain-config>
 </network-security-config>
