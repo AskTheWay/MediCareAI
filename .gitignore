@@ -184,3 +184,6 @@ MediCareAI-*.apk
 
 # Release signing info with sensitive data
 RELEASE_INFO.md
+
+# Release notes (used for GitHub releases but not committed)
+RELEASE_NOTES*.md
