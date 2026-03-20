@@ -42,18 +42,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **提示内容**: "单个文件大小不得超过 10MB"
 - **样式**: 灰色小字显示在选择文件按钮下方
 
+**4. 认证体验优化（方案 A+B）**
+- **问题背景**: 长时间不操作或 refresh_token 过期后，用户需要手动重新登录
+- **解决方案 A**: 应用生命周期感知自动刷新 Token
+  - 新增 `AppLifecycleObserver`：监听应用从后台切换到前台
+  - 应用恢复时自动检查 Token 是否即将过期（提前5分钟）
+  - 自动使用 refresh_token 刷新 access_token
+- **解决方案 B**: Token 完全过期后的优雅处理
+  - 新增 `AuthEventBus`：全局认证事件管理器
+  - 检测到 "Not authenticated" 错误时自动发送事件
+  - MainActivity 监听事件，自动跳转到登录页
+  - 登录成功后自动返回之前要访问的页面
+- **用户体验**: 
+  - Token 即将过期：完全无感知自动刷新
+  - Token 完全过期：自动跳转登录 → 登录后自动返回原页面
+
 #### 修改文件清单 Modified Files
 
 | 文件路径 | 修改类型 | 说明 |
 |---------|---------|------|
 | `android/app/src/main/java/.../data/local/TokenManager.kt` | 新增 | Token 持久化管理类 |
 | `android/app/src/main/java/.../data/api/MediCareApiClient.kt` | 重写 | 实现 401 拦截和自动刷新 |
-| `android/app/src/main/java/.../data/repository/Repository.kt` | 修改 | 集成 Token 过期时间存储 |
+| `android/app/src/main/java/.../data/repository/Repository.kt` | 修改 | 集成 Token 过期时间存储和刷新方法 |
 | `android/app/src/main/java/.../di/AppModule.kt` | 修改 | 配置 TokenManager 依赖注入 |
 | `android/app/src/main/java/.../ui/screens/ProfileScreen.kt` | 重写 | 添加特慢病管理功能 |
 | `android/app/src/main/java/.../ui/screens/SymptomSubmitScreen.kt` | 修改 | 添加 10MB 文件提示 |
 | `android/app/src/main/java/.../data/model/Models.kt` | 新增 | 特慢病相关数据模型 |
-| `android/app/src/main/java/.../viewmodel/ViewModels.kt` | 新增 | ChronicDiseaseViewModel |
+| `android/app/src/main/java/.../viewmodel/ViewModels.kt` | 修改 | 添加 ChronicDiseaseViewModel 和认证事件处理 |
+| `android/app/src/main/java/.../data/auth/AuthEventBus.kt` | 新增 | 全局认证事件管理器 |
+| `android/app/src/main/java/.../auth/AppLifecycleObserver.kt` | 新增 | 应用生命周期监听和自动刷新 |
+| `android/app/src/main/java/.../MainActivity.kt` | 修改 | 集成认证事件监听和自动跳转 |
+| `android/app/build.gradle.kts` | 修改 | 添加 lifecycle-process 依赖 |
 | `.gitignore` | 修改 | 添加 Android data/local 例外规则 |
 
 ---

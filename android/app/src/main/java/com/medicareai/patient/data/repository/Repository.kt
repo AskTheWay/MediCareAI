@@ -95,6 +95,22 @@ class AuthRepository @Inject constructor(
     suspend fun shouldRefreshToken(): Boolean {
         return apiClient.shouldRefreshToken()
     }
+
+    suspend fun refreshAccessToken(): Boolean {
+        val refreshToken = tokenManager.getRefreshToken() ?: return false
+
+        return apiClient.refreshToken(refreshToken)
+            .map { tokenResponse ->
+                tokenManager.saveTokens(
+                    tokenResponse.access_token,
+                    tokenResponse.refresh_token,
+                    tokenResponse.expires_in.toLong()
+                )
+                apiClient.setAuthToken(tokenResponse.access_token)
+                true
+            }
+            .getOrElse { false }
+    }
 }
 
 @Singleton

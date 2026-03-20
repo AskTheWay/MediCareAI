@@ -2,6 +2,9 @@ package com.medicareai.patient.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.medicareai.patient.data.api.AuthException
+import com.medicareai.patient.data.auth.AuthEventBus
+import com.medicareai.patient.data.auth.AuthScreen
 import com.medicareai.patient.data.model.*
 import com.medicareai.patient.data.repository.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -114,23 +117,28 @@ class AuthViewModel @Inject constructor(
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
-    private val patientRepository: PatientRepository
+    private val patientRepository: PatientRepository,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
-    
+
     private val _profileState = MutableStateFlow<UiState<Patient>>(UiState.Idle)
     val profileState: StateFlow<UiState<Patient>> = _profileState.asStateFlow()
-    
+
     private val _updateState = MutableStateFlow<UiState<Patient>>(UiState.Idle)
     val updateState: StateFlow<UiState<Patient>> = _updateState.asStateFlow()
-    
+
     fun loadProfile() {
         viewModelScope.launch {
             _profileState.value = UiState.Loading
+            authRepository.loadSavedToken()
             patientRepository.getMyProfile()
                 .onSuccess { patient ->
                     _profileState.value = UiState.Success(patient)
                 }
                 .onFailure { error ->
+                    if (error is AuthException || error.message?.contains("authenticated", ignoreCase = true) == true) {
+                        AuthEventBus.emitTokenExpired(AuthScreen.PROFILE)
+                    }
                     _profileState.value = UiState.Error(error.message ?: "加载失败")
                 }
         }
@@ -157,26 +165,31 @@ class ProfileViewModel @Inject constructor(
 
 @HiltViewModel
 class MedicalRecordsViewModel @Inject constructor(
-    private val caseRepository: MedicalCaseRepository
+    private val caseRepository: MedicalCaseRepository,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
-    
+
     private val _casesState = MutableStateFlow<UiState<List<MedicalCase>>>(UiState.Idle)
     val casesState: StateFlow<UiState<List<MedicalCase>>> = _casesState.asStateFlow()
-    
+
     private val _caseDetailState = MutableStateFlow<UiState<MedicalCase>>(UiState.Idle)
     val caseDetailState: StateFlow<UiState<MedicalCase>> = _caseDetailState.asStateFlow()
-    
+
     private val _commentsState = MutableStateFlow<UiState<List<DoctorComment>>>(UiState.Idle)
     val commentsState: StateFlow<UiState<List<DoctorComment>>> = _commentsState.asStateFlow()
-    
+
     fun loadCases() {
         viewModelScope.launch {
             _casesState.value = UiState.Loading
+            authRepository.loadSavedToken()
             caseRepository.getCases()
                 .onSuccess { cases ->
                     _casesState.value = UiState.Success(cases)
                 }
                 .onFailure { error ->
+                    if (error is AuthException || error.message?.contains("authenticated", ignoreCase = true) == true) {
+                        AuthEventBus.emitTokenExpired(AuthScreen.MEDICAL_RECORDS)
+                    }
                     _casesState.value = UiState.Error(error.message ?: "加载失败")
                 }
         }
@@ -527,7 +540,8 @@ class SymptomSubmitViewModel @Inject constructor(
 
 @HiltViewModel
 class ChronicDiseaseViewModel @Inject constructor(
-    private val chronicDiseaseRepository: ChronicDiseaseRepository
+    private val chronicDiseaseRepository: ChronicDiseaseRepository,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _availableDiseases = MutableStateFlow<UiState<List<ChronicDisease>>>(UiState.Idle)
@@ -545,11 +559,15 @@ class ChronicDiseaseViewModel @Inject constructor(
     fun loadAvailableDiseases() {
         viewModelScope.launch {
             _availableDiseases.value = UiState.Loading
+            authRepository.loadSavedToken()
             chronicDiseaseRepository.getChronicDiseases()
                 .onSuccess { response ->
                     _availableDiseases.value = UiState.Success(response.items)
                 }
                 .onFailure { error ->
+                    if (error is AuthException || error.message?.contains("authenticated", ignoreCase = true) == true) {
+                        AuthEventBus.emitTokenExpired(AuthScreen.PROFILE)
+                    }
                     _availableDiseases.value = UiState.Error(error.message ?: "加载疾病列表失败")
                 }
         }
@@ -558,11 +576,15 @@ class ChronicDiseaseViewModel @Inject constructor(
     fun loadMyDiseases() {
         viewModelScope.launch {
             _myDiseases.value = UiState.Loading
+            authRepository.loadSavedToken()
             chronicDiseaseRepository.getMyChronicDiseases()
                 .onSuccess { response ->
                     _myDiseases.value = UiState.Success(response.items)
                 }
                 .onFailure { error ->
+                    if (error is AuthException || error.message?.contains("authenticated", ignoreCase = true) == true) {
+                        AuthEventBus.emitTokenExpired(AuthScreen.PROFILE)
+                    }
                     _myDiseases.value = UiState.Error(error.message ?: "加载我的疾病失败")
                 }
         }
