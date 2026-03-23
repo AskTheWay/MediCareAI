@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [Unreleased]
+
+### Android 深色模式修复 | Android Dark Mode Fix | 🐛
+
+#### Bug 修复 Bug Fixes | 🐛
+
+**症状提交页面深色模式对比度修复**
+- **问题**: 在深色模式下，AI诊断结果、知识库引用等区域显示不清晰，对比度太低
+- **原因**: `SymptomSubmitScreen.kt` 中使用了大量硬编码的浅色背景色（如 `Color(0xFFF0F8FF)`、`Color.White` 等），与深色主题不兼容
+- **修复**: 将所有硬编码颜色替换为 MaterialTheme 动态颜色方案
+  - 诊断结果卡片背景：`MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)`
+  - 内容卡片背景：`MaterialTheme.colorScheme.surface`
+  - Token消耗信息区域：`MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)`
+  - 知识库引用区域：`MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)`
+  - 所有 `Color.Gray` 文本改为 `MaterialTheme.colorScheme.onSurfaceVariant`
+  - 所有 `Color.DarkGray` 文本改为 `MaterialTheme.colorScheme.onSurface`
+  - 分割线颜色：`MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)`
+- **涉及文件**: `SymptomSubmitScreen.kt`
+
+#### 修改文件清单 Modified Files
+
+| 文件路径 | 修改类型 | 说明 |
+|---------|---------|------|
+| `android/app/src/main/java/.../ui/screens/SymptomSubmitScreen.kt` | 修改 | 修复深色模式下的颜色对比度问题，替换所有硬编码颜色为 MaterialTheme 动态颜色 |
+
+---
+
 ## [3.5.1] - 2026-03-21
 
 ### Android UI 修复与行政区划数据补全 | Android UI Fixes & Address Data Completion | 🐛✨

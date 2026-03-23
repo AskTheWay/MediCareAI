@@ -174,7 +174,7 @@ fun SymptomSubmitScreen(
                     Text(
                         text = "症状持续时间",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     
@@ -395,7 +395,7 @@ fun SymptomSubmitScreen(
                     Text(
                         text = "单个文件大小不得超过 10MB",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     if (uploadState is UiState.Error) {
@@ -428,7 +428,7 @@ fun SymptomSubmitScreen(
                     Text(
                         text = "选择医生后，他们可以看到您的症状和诊断结果",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                     
@@ -523,7 +523,7 @@ fun SymptomSubmitScreen(
                             Text(
                                 text = "勾选后，医生可以查看您的症状、AI诊断结果和上传的检查资料（个人敏感信息将被自动隐藏）。不勾选则仅您自己可见。",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -563,7 +563,7 @@ fun SymptomSubmitScreen(
                                 Icon(
                                     imageVector = if (isUploaded) Icons.Default.CheckCircle else Icons.Default.AttachFile,
                                     contentDescription = null,
-                                    tint = if (isUploaded) Color(0xFF4CAF50) else Color.Gray,
+                                    tint = if (isUploaded) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 
@@ -587,7 +587,7 @@ fun SymptomSubmitScreen(
                                         Text(
                                             text = "上传完成，等待处理...",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = Color.Gray
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -703,7 +703,7 @@ fun SymptomSubmitScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFF0F8FF)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                     )
                 ) {
                     Column(
@@ -727,13 +727,13 @@ fun SymptomSubmitScreen(
                         if (streamingState.isLoading) {
                             LinearProgressIndicator(
                                 modifier = Modifier.fillMaxWidth(),
-                                color = PrimaryBlue
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = streamingState.status,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         
@@ -743,7 +743,7 @@ fun SymptomSubmitScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(8.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = Color.White
+                                    containerColor = MaterialTheme.colorScheme.surface
                                 )
                             ) {
                                 SimpleMarkdownContent(
@@ -760,7 +760,7 @@ fun SymptomSubmitScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFFE3F2FD)
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
                                 )
                             ) {
                                 Row(
@@ -788,7 +788,7 @@ fun SymptomSubmitScreen(
                                         Text(
                                             text = "AI 模型",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = Color.Gray
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Text(
                                             text = streamingState.modelId ?: "未知模型",
@@ -816,7 +816,7 @@ fun SymptomSubmitScreen(
                                         Text(
                                             text = "Token 消耗",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = Color.Gray
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         Text(
                                             text = streamingState.tokensUsed?.toString() ?: "N/A",
@@ -862,7 +862,7 @@ private fun KnowledgeSourcesSection(sources: List<KnowledgeSource>) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFAFAFA)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
         Column {
@@ -887,7 +887,7 @@ private fun KnowledgeSourcesSection(sources: List<KnowledgeSource>) {
                     Text(
                         text = "基于 $totalChunks 个相关医疗知识片段",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Icon(
@@ -913,7 +913,7 @@ private fun KnowledgeSourcesSection(sources: List<KnowledgeSource>) {
                                     .padding(vertical = 4.dp),
                                 shape = RoundedCornerShape(8.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = Color.White
+                                    containerColor = MaterialTheme.colorScheme.surface
                                 )
                             ) {
                                 Column(
@@ -959,7 +959,7 @@ private fun KnowledgeSourcesSection(sources: List<KnowledgeSource>) {
                                         Text(
                                             text = "📖 $it",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = Color.Gray,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.padding(top = 4.dp)
                                         )
                                     }
@@ -970,7 +970,7 @@ private fun KnowledgeSourcesSection(sources: List<KnowledgeSource>) {
                                         Text(
                                             text = if (text.length > 200) text.take(200) + "..." else text,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = Color.DarkGray,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.padding(top = 8.dp)
                                         )
                                     }
@@ -996,7 +996,7 @@ fun FileUploadItem(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFF5F5F5)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
         )
     ) {
         Row(
@@ -1036,7 +1036,7 @@ fun FileUploadItem(
                 Text(
                     text = fileSize,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 // Progress bar
@@ -1060,7 +1060,7 @@ fun FileUploadItem(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Remove",
-                    tint = Color.Gray
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -1099,7 +1099,7 @@ fun DoctorChip(
                 Text(
                     text = " · ${doctor.hospital}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1112,7 +1112,7 @@ fun DoctorChip(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Remove",
-                    tint = Color.Gray,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -1152,7 +1152,7 @@ fun DoctorSelectionDialog(
                 Text(
                     text = "选择您想要分享诊断结果的医生",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1176,7 +1176,7 @@ fun DoctorSelectionDialog(
                         Text(
                             text = "暂无可选医生",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
@@ -1250,7 +1250,7 @@ fun DoctorListItem(
                 Text(
                     text = listOfNotNull(doctor.hospital, doctor.department).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             if (doctor.specialty != null) {
@@ -1378,7 +1378,7 @@ fun SimpleMarkdownContent(
                             if (cells.any { it.contains("可能性") || it.contains("诊断") || it.contains("说明") }) {
                                 Divider(
                                     modifier = Modifier.padding(vertical = 2.dp),
-                                    color = Color.LightGray
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                                 )
                             }
                         }
