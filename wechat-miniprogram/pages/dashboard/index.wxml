@@ -1,0 +1,42 @@
+<view class="container">
+  <view class="card">
+    <view class="title">欢迎，{{user.full_name || '用户'}}</view>
+    <view class="subtitle">邮箱：{{user.email || '-'}}</view>
+    <view class="subtitle">角色：{{roleText || '-'}}</view>
+  </view>
+
+  <view class="card mt">
+    <view class="section-title">快速统计</view>
+    <view class="row stats-row">
+      <view class="stat-item">
+        <text class="stat-value">{{caseCount}}</text>
+        <text class="stat-label">病例总数</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-value">{{recentCases.length}}</text>
+        <text class="stat-label">最近记录</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="card mt">
+    <view class="section-title">最近病历</view>
+    <view wx:if="{{recentCases.length === 0}}" class="empty-tip">暂无病历记录，去“症状提交”创建第一条记录吧。</view>
+    <block wx:for="{{recentCases}}" wx:key="id">
+      <view class="record-item">
+        <view class="record-title">{{item.title || '智能诊断'}}</view>
+        <view class="record-meta">{{item.created_at}}</view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{error}}" class="status status-error">{{error}}</view>
+
+  <view class="row mt">
+    <button class="btn btn-primary" bindtap="goSymptom">症状提交</button>
+    <button class="btn btn-secondary" bindtap="goRecords">病历记录</button>
+  </view>
+
+  <button class="btn btn-secondary" bindtap="goProfile">编辑资料</button>
+  <button class="btn btn-neutral" bindtap="onLogout">退出登录</button>
+</view>

@@ -1234,11 +1234,21 @@ async def configure_ai_model(
     if model_type == "oss":
         return await configure_oss_model(config, db, admin, request)
 
-    # Validate API key format
-    # Note: 'diagnosis' uses 'generic' to support local LLM deployments (vLLM, Ollama, etc.)
-    key_type_map = {"diagnosis": "generic", "mineru": "mineru", "embedding": "qwen", "rerank": "generic"}
+    # Extract provider from config or use 'custom' as default
+    provider = getattr(config, "provider", "custom") or "custom"
 
-    if not validate_api_key_format(
+    # Validate API key format
+    # Note: local OpenAI-compatible providers can run without an API key.
+    key_type_map = {"diagnosis": "generic", "mineru": "mineru", "embedding": "qwen", "rerank": "generic"}
+    api_key_optional = model_type in {"diagnosis", "embedding", "rerank"} and provider in {
+        "vllm",
+        "ollama",
+        "lmstudio",
+        "xinference",
+        "custom",
+    }
+
+    if not api_key_optional and not validate_api_key_format(
         config.api_key, key_type_map.get(model_type, "openai")
     ):
         raise HTTPException(
@@ -1265,9 +1275,6 @@ async def configure_ai_model(
         "embedding": "向量嵌入模型",
         "rerank": "重排序模型 (Rerank)",
     }
-
-    # Extract provider from config or use 'custom' as default
-    provider = getattr(config, "provider", "custom") or "custom"
 
     await config_service.save_config(
         model_type=model_type,
@@ -1728,10 +1735,11 @@ async def _test_ai_model_connection(
 
             elif model_type == "embedding":
                 # Test embedding API
-                headers = {
-                    "Authorization": f"Bearer {config.api_key}",
-                    "Content-Type": "application/json",
-                }
+                from app.services.vector_embedding_service import normalize_embedding_endpoint
+
+                headers = {"Content-Type": "application/json"}
+                if config.api_key:
+                    headers["Authorization"] = f"Bearer {config.api_key}"
 
                 # Detect provider type from URL
                 is_qwen = (
@@ -1749,11 +1757,7 @@ async def _test_ai_model_connection(
                     # OpenAI format
                     payload = {"model": config.model_id, "input": ["test"]}
 
-                # Use the URL as provided (don't add /embeddings)
-                # The URL should already be the complete embedding endpoint
-                test_url = config.api_url
-                if test_url.endswith("/"):
-                    test_url = test_url.rstrip("/")
+                test_url = normalize_embedding_endpoint(config.api_url)
 
                 async with session.post(
                     test_url,

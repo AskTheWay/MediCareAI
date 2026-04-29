@@ -1,0 +1,443 @@
+# RAG 流程与数据库交互说明
+
+> 适用范围：当前 `MediCareAI` 后端实现。本文描述的是“管理员知识库入库 → 向量化 → 患者诊断时检索增强 → 大模型生成 → 结果存储”的实际代码链路。
+
+## 1. 总览
+
+当前项目里有两条容易混在一起的“文档/知识”链路：
+
+1. **管理员端 RAG 知识库链路**
+   - 管理员上传 `.md` 知识库文档。
+   - 系统把 Markdown 文件写入统一知识库目录。
+   - 后台任务切块、生成 embedding、写入 `knowledge_base_chunks`。
+   - 诊断时 RAG 主要从 `knowledge_base_chunks` 检索。
+
+2. **患者上传检查报告链路**
+   - 患者上传 PDF、图片、报告等医疗材料。
+   - 系统调用 MinerU/OCR 解析，写入 `medical_documents.extracted_content` 和 `cleaned_content`。
+   - 诊断时这些解析文本会被拼进 prompt，也会作为 RAG 查询增强输入。
+   - 这些患者报告**默认不会被写入知识库向量表**，它们是本次病例上下文，不是长期知识库。
+
+整体链路：
+
+```text
+管理员上传 .md
+  -> unified knowledge base 文件与 metadata.json
+  -> 后台 vectorize
+  -> knowledge_base_chunks
+
+患者提交症状 + 可选 document_ids
+  -> 读取患者资料 / 慢病 / 历史病例
+  -> 读取 medical_documents 解析文本
+  -> MultiPathRAGSelector 检索 knowledge_base_chunks
+  -> 拼接 prompt
+  -> 调用诊断模型
+  -> 写 medical_cases / ai_diagnosis_logs
+```
+
+## 2. 知识库入库流程
+
+### 2.1 上传入口
+
+入口：
+
+- `backend/app/api/api_v1/endpoints/admin.py`
+- `POST /api/v1/admin/knowledge-base/upload`
+
+当前限制：
+
+- 只允许 `.md`。
+- 内容按 UTF-8 文本读取。
+- 单文件最大 50MB。
+
+主要步骤：
+
+```text
+UploadFile
+  -> 校验 .md
+  -> content.decode("utf-8")
+  -> 写入 /app/data/knowledge_bases/unified/{filename}
+  -> UnifiedKnowledgeLoader.add_document()
+  -> 记录 admin operation log
+  -> BackgroundTasks: _vectorize_knowledge_document()
+```
+
+### 2.2 文件层 metadata
+
+服务：
+
+- `backend/app/services/unified_kb_service.py`
+- `UnifiedKnowledgeLoader`
+
+落地位置：
+
+```text
+/app/data/knowledge_bases/unified/
+  ├── metadata.json
+  └── *.md
+```
+
+`metadata.json` 保存：
+
+- `filename`
+- `title`
+- `category`
+- `tags`
+- `source`
+- `file_size`
+- `added_at`
+
+当前分类策略较简单：`_infer_category()` 统一返回 `unified`。
+
+### 2.3 后台向量化
+
+后台任务：
+
+- `admin.py::_vectorize_knowledge_document()`
+
+向量化服务：
+
+- `backend/app/services/kb_vectorization_service.py`
+- `KnowledgeBaseVectorizationService.vectorize_markdown_document()`
+
+流程：
+
+```text
+load_document(filename)
+  -> 读取 Markdown 内容
+  -> _extract_markdown_sections()
+  -> DocumentChunker.split_text()
+  -> 计算 chunk_text_hash 去重
+  -> VectorEmbeddingService.generate_embeddings_batch()
+  -> 写入 knowledge_base_chunks
+```
+
+切块规则：
+
+- 默认 `chunk_size=1000`
+- 默认 `chunk_overlap=200`
+- 优先按 Markdown 标题、段落、换行、句号、空格切分
+
+去重规则：
+
+- `chunk_text_hash = sha256(chunk_text)`
+- `knowledge_base_chunks.chunk_text_hash` 是唯一字段
+- 重传相同标题时，会先尝试删除旧 chunks，再插入新 chunks
+
+## 3. Embedding 配置与生成
+
+服务：
+
+- `backend/app/services/vector_embedding_service.py`
+- `VectorEmbeddingService`
+
+配置优先级：
+
+1. `vector_embedding_configs`
+   - 取 `is_default=true` 且 `is_active=true` 的配置。
+2. `ai_model_configurations`
+   - `model_type='embedding'`。
+3. 环境变量 / settings fallback。
+
+生成方式：
+
+- Qwen/DashScope：请求体为 `{"model": ..., "input": {"texts": [...]}}`
+- OpenAI-compatible：请求体为 `{"model": ..., "input": [...]}`。
+
+注意：
+
+- 当前 `KnowledgeBaseChunk.embedding` 是 `JSONB`。
+- 主 RAG 代码把 chunks 从数据库读到应用内，再用 Python 算 cosine similarity。
+- 虽然容器使用了 pgvector/Postgres，但当前主诊断 RAG 路径没有直接用 SQL pgvector operator 做向量距离查询。
+
+## 4. 诊断时 RAG 检索流程
+
+### 4.1 API 入口
+
+主要入口：
+
+- `POST /api/v1/ai/comprehensive-diagnosis`
+- `POST /api/v1/ai/comprehensive-diagnosis-stream`
+
+对应文件：
+
+- `backend/app/api/api_v1/endpoints/ai.py`
+
+请求核心字段：
+
+- `symptoms`
+- `severity`
+- `duration`
+- `document_ids`
+- `disease_category`
+- `language`
+- `case_id`
+- `share_with_doctors`
+
+### 4.2 诊断前读取数据库
+
+后端会先收集上下文：
+
+```text
+current_user
+  -> patients 表 / PatientService 读取患者资料
+  -> patient_chronic_conditions + chronic_diseases 读取慢病
+  -> medical_cases 读取最近历史诊断
+  -> medical_documents 读取本次上传报告解析文本
+```
+
+如果请求带 `document_ids`：
+
+- 只读取 `MedicalDocument.upload_status == "processed"` 的文档。
+- 优先使用 `cleaned_content`，否则使用 `extracted_content`。
+
+### 4.3 MultiPathRAGSelector
+
+主诊断路径调用：
+
+- `AIService.query_knowledge_base()`
+- `MultiPathRAGSelector.select_knowledge_bases()`
+
+召回路径：
+
+1. **疾病类别预测**
+   - 使用症状 + 检查报告文本预测候选类别。
+   - 当前统一知识库也会额外加入 `unified` 类别。
+
+2. **分类过滤向量召回**
+   - 查询 `knowledge_base_chunks`
+   - 条件：
+     - `is_active == true`
+     - `disease_category in predicted_categories + ['unified']`
+   - 对每个 chunk 在应用层计算 cosine similarity。
+
+3. **全库向量召回**
+   - 查询全部 `is_active == true` 的 chunks。
+   - 仍然在应用层算 cosine similarity。
+
+4. **关键词/术语召回**
+   - 从症状和报告文本中抽取医学关键词。
+   - 遍历 `knowledge_base_chunks.chunk_text` 做包含匹配。
+
+5. **文档相关性加权**
+   - 如果本次病例有检查报告解析文本，会用报告文本和 chunk 文本的词重叠增加分数。
+
+6. **可选外部 rerank**
+   - 如果管理员配置了 `model_type='rerank'`，会调用 `RerankingService` 重排。
+   - 没配置则保持原排序。
+
+7. **按类别聚合并返回 top sources**
+   - 返回 `sources`
+   - 返回 `selection_reasoning`
+   - 返回 `retrieval_stats`
+
+### 4.4 Prompt 拼接
+
+Prompt 构建函数：
+
+- `AIService._build_diagnosis_prompt()`
+
+Prompt 主要包含三部分：
+
+1. 患者个人信息
+   - 姓名、性别、出生日期、电话、地址、慢病等。
+2. 本次诊疗提交信息
+   - 症状、持续时间、严重程度、上传报告 OCR/解析文本。
+3. 医疗知识库参考
+   - RAG 检索出来的疾病/指南/chunk 内容。
+
+上传检查报告的解析文本会被截断加入 prompt：
+
+```text
+[检查报告 N 内容]:
+{text[:2000]}
+```
+
+知识库 chunk 也会截断后拼入上下文：
+
+```text
+【section_title】相似度: x.xx
+{chunk_text[:500]}
+```
+
+### 4.5 模型调用
+
+模型调用：
+
+- `AIService.chat_with_glm()`
+- `AIService.chat_with_glm_stream()`
+
+实际发送给模型的是 OpenAI-compatible `messages`：
+
+```json
+[
+  {"role": "system", "content": "...医生角色系统提示..."},
+  {"role": "user", "content": "...完整 prompt..."}
+]
+```
+
+模型配置来源：
+
+- `ai_model_configurations` 中 `model_type='diagnosis'`
+- 或 `.env` 中 `AI_API_URL`、`AI_API_KEY`、`AI_MODEL_ID`
+
+## 5. 诊断结果存储
+
+诊断完成后主要写入：
+
+### 5.1 `medical_cases`
+
+保存：
+
+- `patient_id`
+- `title`
+- `symptoms`
+- `diagnosis`
+- `severity`
+- `description`
+- `status`
+
+流式诊断如果带 `case_id`，会更新已有病例；否则创建新病例。
+
+### 5.2 `ai_diagnosis_logs`
+
+记录性能与状态：
+
+- `user_id`
+- `request_type`
+- `ai_model_id`
+- `ai_api_url`
+- `request_duration_ms`
+- `tokens_input`
+- `tokens_output`
+- `status`
+- `error_message`
+- `is_anomaly`
+
+用途是监控，不保存完整 prompt 和完整模型响应。
+
+### 5.3 RAG 来源返回但不完整落盘
+
+接口响应会返回：
+
+- `knowledge_base_sources`
+- `knowledge_base_selection_reasoning`
+- `workflow_info`
+
+但当前主诊断路径没有稳定把这些内容写入 `case_knowledge_matches` 或 `ai_feedbacks`。这两个表/模型存在，但不是当前综合诊断主链路的核心落盘点。
+
+## 6. 数据库表交互总表
+
+| 表 | 读/写 | 参与阶段 | 说明 |
+|---|---|---|---|
+| `ai_model_configurations` | 读/写 | 诊断模型、Embedding、MinerU、OSS、Rerank 配置 | 管理员端模型配置主表 |
+| `vector_embedding_configs` | 读/写 | Embedding 配置 | RAG 向量配置优先表 |
+| `knowledge_base_chunks` | 读/写 | 知识库向量化、RAG 检索 | 保存 chunk 文本、embedding、检索次数 |
+| `medical_documents` | 读/写 | 患者报告上传与解析 | 保存原文件信息、MinerU 解析内容、PII 清理内容 |
+| `medical_cases` | 读/写 | 诊断输入、历史诊断、结果保存 | 症状和最终诊断结果 |
+| `patients` | 读 | Prompt 上下文 | 患者基本信息 |
+| `patient_chronic_conditions` | 读 | Prompt 上下文 | 患者慢病关联 |
+| `chronic_diseases` | 读 | Prompt 上下文 | 慢病字典 |
+| `ai_diagnosis_logs` | 写 | 诊断监控 | 保存耗时、token、状态，不保存 raw prompt |
+| `case_knowledge_matches` | 预留/非主链路 | RAG 匹配记录 | 模型存在，当前主诊断流程未稳定写入 |
+| `ai_feedbacks` | 预留/医生端读取 | AI 反馈记录 | 模型存在，当前主综合诊断结果主要写 `medical_cases` |
+
+## 7. 常用排查 SQL
+
+### 查看知识库 chunk 数量
+
+```sql
+select source_type, disease_category, count(*)
+from knowledge_base_chunks
+where is_active = true
+group by source_type, disease_category
+order by count(*) desc;
+```
+
+### 查看最近入库 chunks
+
+```sql
+select document_title, section_title, left(chunk_text, 120), embedding_model_id, created_at
+from knowledge_base_chunks
+order by created_at desc
+limit 10;
+```
+
+### 查看 Embedding 配置
+
+```sql
+select name, provider, model_id, api_url, is_active, is_default, test_status
+from vector_embedding_configs;
+```
+
+### 查看管理员模型配置
+
+```sql
+select model_type, api_url, model_id, enabled, provider, test_status, error_message
+from ai_model_configurations
+where model_type in ('diagnosis', 'embedding', 'rerank', 'mineru', 'oss');
+```
+
+### 查看患者报告解析结果
+
+```sql
+select id, original_filename, upload_status,
+       jsonb_pretty(extracted_content) as extracted,
+       jsonb_pretty(cleaned_content) as cleaned,
+       jsonb_pretty(extraction_metadata) as metadata
+from medical_documents
+order by created_at desc
+limit 5;
+```
+
+### 查看最近诊断日志
+
+```sql
+select timestamp, request_type, ai_model_id, ai_api_url,
+       request_duration_ms, tokens_input, tokens_output, status, error_message
+from ai_diagnosis_logs
+order by timestamp desc
+limit 20;
+```
+
+## 8. 当前实现的关键限制
+
+1. **管理员 RAG 知识库只支持 `.md`**
+   - 上传接口、文件扫描、切块逻辑都围绕 Markdown 实现。
+   - PDF/DOCX/TXT 要扩展，需要先转文本/Markdown，再复用向量化。
+
+2. **患者上传报告不是长期知识库**
+   - 报告解析结果保存在 `medical_documents`。
+   - 诊断时只作为本次 prompt 和检索查询增强。
+   - 不会默认写入 `knowledge_base_chunks`。
+
+3. **主诊断路径不保存 raw prompt/raw response**
+   - 只能看到最终 `medical_cases.diagnosis` 和 `ai_diagnosis_logs` 监控数据。
+   - 如果需要审计模型原始输入输出，建议新增 `ai_trace_logs` 或 `AI_DEBUG_TRACE=true` 写文件。
+
+4. **向量检索主要在应用层完成**
+   - `embedding` 是 JSONB。
+   - 检索时从数据库读 chunks 到 Python，再算 cosine。
+   - 大规模知识库时需要考虑 pgvector 列和 SQL 向量索引。
+
+5. **Rerank 是可选能力**
+   - 没有配置 `model_type='rerank'` 时，重排服务会直接返回原顺序。
+
+## 9. 推荐的改进方向
+
+短期：
+
+- 增加 AI trace 调试开关，记录 `messages`、RAG sources、raw LLM response。
+- 管理员端知识库支持 `.txt/.pdf/.docx`，统一提取为 Markdown 后入库。
+- 在诊断完成时把 `knowledge_base_sources` 写入 `case_knowledge_matches` 或 `ai_feedbacks`。
+
+中期：
+
+- 把 `knowledge_base_chunks.embedding` 改为 pgvector 类型，使用数据库向量索引。
+- 为 `knowledge_base_chunks.search_vector` 补齐一致的全文索引维护逻辑。
+- 将患者报告中的结构化指标抽取成可查询字段，而不是只放在 JSONB 文本里。
+
+长期：
+
+- 建立 RAG 评测集，记录每次检索命中、引用 chunk、医生反馈。
+- 加入文档版本管理，支持知识库文档更新、回滚、过期控制。

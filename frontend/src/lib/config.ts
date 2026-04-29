@@ -40,6 +40,6 @@ export const CONFIG = {
   ],
   
   // 应用信息
-  APP_NAME: 'MediCareAI',
+  APP_NAME: '健康助手',
   APP_VERSION: '1.0.0',
 };

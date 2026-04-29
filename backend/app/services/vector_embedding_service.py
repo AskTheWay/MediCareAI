@@ -32,6 +32,18 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def normalize_embedding_endpoint(api_url: str) -> str:
+    """Normalize an embedding URL to the concrete OpenAI-compatible endpoint."""
+    base = (api_url or "").rstrip("/")
+    if not base:
+        return base
+    if base.endswith("/embeddings") or "text-embedding/text-embedding" in base:
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/embeddings"
+    return f"{base}/v1/embeddings"
+
+
 class VectorEmbeddingService:
     """
     Vector Embedding Service / 向量嵌入服务
@@ -193,19 +205,18 @@ class VectorEmbeddingService:
         is_qwen = provider == 'qwen' or 'dashscope' in api_url.lower() or 'aliyun' in api_url.lower()
         
         # Determine URL - for some providers, the full URL is in api_url
-        api_endpoint = api_url
-        if not api_endpoint.endswith('/embeddings') and not 'text-embedding/text-embedding' in api_endpoint:
-            api_endpoint = f"{api_endpoint.rstrip('/')}embeddings"
+        api_endpoint = normalize_embedding_endpoint(api_url)
         
         async with httpx.AsyncClient(timeout=30.0) as client:
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
             if is_qwen:
                 # Qwen API format
                 response = await client.post(
                     api_endpoint,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}"
-                    },
+                    headers=headers,
                     json={
                         "model": model_id or "text-embedding-v3",
                         "input": {
@@ -220,13 +231,10 @@ class VectorEmbeddingService:
                 # OpenAI API format
                 response = await client.post(
                     api_endpoint,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}"
-                    },
+                    headers=headers,
                     json={
                         "model": model_id,
-                        "input": text,
+                        "input": [text],
                         "encoding_format": "float"
                     }
                 )
@@ -368,18 +376,16 @@ class VectorEmbeddingService:
                 try:
                     async with httpx.AsyncClient(timeout=60.0) as client:
                         # Determine URL - for some providers, the full URL is in api_url
-                        api_endpoint = config.api_url
-                        if not api_endpoint.endswith('/embeddings') and not 'text-embedding/text-embedding' in api_endpoint:
-                            api_endpoint = f"{api_endpoint.rstrip('/')}embeddings"
+                        api_endpoint = normalize_embedding_endpoint(config.api_url)
+                        headers = {"Content-Type": "application/json"}
+                        if config.api_key:
+                            headers["Authorization"] = f"Bearer {config.api_key}"
                         
                         if is_qwen:
                             # Qwen API format
                             response = await client.post(
                                 api_endpoint,
-                                headers={
-                                    "Content-Type": "application/json",
-                                    "Authorization": f"Bearer {config.api_key}"
-                                },
+                                headers=headers,
                                 json={
                                     "model": config.model_id or "text-embedding-v3",
                                     "input": {
@@ -391,10 +397,7 @@ class VectorEmbeddingService:
                             # OpenAI API format
                             response = await client.post(
                                 api_endpoint,
-                                headers={
-                                    "Content-Type": "application/json",
-                                    "Authorization": f"Bearer {config.api_key}"
-                                },
+                                headers=headers,
                                 json={
                                     "model": config.model_id,
                                     "input": batch,
@@ -441,18 +444,16 @@ class VectorEmbeddingService:
             
             async with httpx.AsyncClient(timeout=60.0) as client:
                 # Determine URL - for some providers, the full URL is in api_url
-                api_endpoint = config.api_url
-                if not api_endpoint.endswith('/embeddings') and not 'text-embedding/text-embedding' in api_endpoint:
-                    api_endpoint = f"{api_endpoint.rstrip('/')}embeddings"
+                api_endpoint = normalize_embedding_endpoint(config.api_url)
+                headers = {"Content-Type": "application/json"}
+                if config.api_key:
+                    headers["Authorization"] = f"Bearer {config.api_key}"
                 
                 if is_qwen:
                     # Qwen API format
                     response = await client.post(
                         api_endpoint,
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {config.api_key}"
-                        },
+                        headers=headers,
                         json={
                             "model": config.model_id or "text-embedding-v3",
                             "input": {
@@ -464,10 +465,7 @@ class VectorEmbeddingService:
                     # OpenAI API format
                     response = await client.post(
                         api_endpoint,
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {config.api_key}"
-                        },
+                        headers=headers,
                         json={
                             "model": config.model_id,
                             "input": batch,

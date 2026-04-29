@@ -2,13 +2,24 @@
 AI 诊断 API 端点 - 完整工作流集成
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    Request,
+    UploadFile,
+    File,
+    Form,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import json
 import uuid
+import os
+import aiofiles
 from app.db.database import get_db
 from app.core.deps import get_current_active_user
 from app.models.models import (
@@ -19,6 +30,7 @@ from app.models.models import (
     MedicalCase,
 )
 from app.services.ai_service import ai_service
+from app.services.mineru_service import MinerUService
 from app.services.patient_service import PatientService
 from app.services.medical_case_service import MedicalCaseService
 from app.core.config import settings
@@ -28,6 +40,154 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+CHAT_TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
+CHAT_MINERU_EXTENSIONS = {
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".tiff",
+    ".webp",
+}
+MAX_CHAT_FILES = 10
+MAX_PROMPT_SECTION_CHARS = 6000
+
+
+def _truncate_chat_text(text: str, limit: int = MAX_PROMPT_SECTION_CHARS) -> str:
+    if not text:
+        return ""
+    return text if len(text) <= limit else f"{text[:limit]}\n...[内容已截断]"
+
+
+def _normalize_chat_history(history: str) -> List[Dict[str, str]]:
+    try:
+        parsed_history = json.loads(history or "[]")
+    except json.JSONDecodeError:
+        return []
+
+    if not isinstance(parsed_history, list):
+        return []
+
+    normalized_history = []
+    for item in parsed_history[-8:]:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        normalized_history.append(
+            {"role": role, "content": _truncate_chat_text(content, 2000)}
+        )
+    return normalized_history
+
+
+def _build_chat_sources(kb_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    sources = []
+    for source in kb_result.get("rag_info", {}).get("sources", []):
+        chunks = []
+        for chunk in source.get("chunks", [])[:3]:
+            chunk_text = chunk.get("text") or chunk.get("chunk_text") or ""
+            chunks.append(
+                {
+                    "chunk_id": chunk.get("chunk_id"),
+                    "section_title": chunk.get("section_title"),
+                    "text_preview": _truncate_chat_text(chunk_text, 200),
+                    "similarity_score": chunk.get("similarity_score", 0),
+                    "source_file": chunk.get("source_file"),
+                }
+            )
+        sources.append(
+            {
+                "category": source.get("category"),
+                "relevance_score": source.get("relevance_score", 0),
+                "selection_reason": source.get("selection_reason", ""),
+                "chunks_count": len(source.get("chunks", [])),
+                "chunks": chunks,
+            }
+        )
+    return sources
+
+
+async def _save_and_extract_chat_file(
+    file: UploadFile,
+    db: AsyncSession,
+    upload_dir: str,
+) -> Dict[str, Any]:
+    original_filename = file.filename or "upload"
+    _, extension = os.path.splitext(original_filename.lower())
+
+    if extension not in CHAT_TEXT_EXTENSIONS and extension not in CHAT_MINERU_EXTENSIONS:
+        return {
+            "filename": original_filename,
+            "status": "failed",
+            "error": "不支持的文件类型，仅支持图片、PDF、DOC/DOCX、TXT、MD。",
+        }
+
+    if file.size and file.size > settings.max_file_size:
+        return {
+            "filename": original_filename,
+            "status": "failed",
+            "error": f"文件超过大小限制：{settings.max_file_size} bytes",
+        }
+
+    os.makedirs(upload_dir, exist_ok=True)
+    saved_filename = f"{uuid.uuid4()}{extension}"
+    file_path = os.path.join(upload_dir, saved_filename)
+
+    async with aiofiles.open(file_path, "wb") as output_file:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            await output_file.write(chunk)
+
+    extracted_text = ""
+    extraction_status = "processed"
+    extraction_error = None
+
+    if extension in CHAT_TEXT_EXTENSIONS:
+        async with aiofiles.open(
+            file_path, "r", encoding="utf-8", errors="ignore"
+        ) as input_file:
+            extracted_text = await input_file.read()
+    else:
+        mineru_service = MinerUService(db=db)
+        extraction_result = await mineru_service.extract_document_content(
+            file_path,
+            extract_tables=True,
+            extract_images=False,
+            ocr=True,
+            wait_for_completion=True,
+            max_wait_time=180,
+        )
+        if extraction_result.get("success") and extraction_result.get(
+            "status"
+        ) == "completed":
+            extracted_text = (
+                extraction_result.get("text_content")
+                or extraction_result.get("markdown_content")
+                or ""
+            )
+        else:
+            extraction_status = "failed"
+            extraction_error = extraction_result.get("error") or extraction_result.get(
+                "detail"
+            ) or "文件解析失败"
+
+    return {
+        "filename": original_filename,
+        "stored_filename": saved_filename,
+        "file_type": extension.lstrip("."),
+        "status": extraction_status,
+        "content": extracted_text,
+        "content_preview": _truncate_chat_text(extracted_text, 300),
+        "error": extraction_error,
+    }
 
 
 class ComprehensiveDiagnosisRequest(BaseModel):
@@ -1079,6 +1239,160 @@ async def comprehensive_diagnosis_stream(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"诊断失败: {str(e)}",
+        )
+
+
+@router.post("/symptom-chat")
+async def symptom_chat(
+    message: str = Form(""),
+    history: str = Form("[]"),
+    language: str = Form("zh"),
+    files: List[UploadFile] = File(default=[]),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        if current_user.role != "patient":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only patients can use symptom chat",
+            )
+
+        uploaded_files = files or []
+        cleaned_message = message.strip()
+        if not cleaned_message and not uploaded_files:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="请输入问诊内容或上传检查资料",
+            )
+        if len(uploaded_files) > MAX_CHAT_FILES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"单次最多上传 {MAX_CHAT_FILES} 个文件",
+            )
+
+        patient_info = {
+            "full_name": current_user.full_name,
+            "email": current_user.email,
+            "gender": current_user.gender,
+            "date_of_birth": str(current_user.date_of_birth)
+            if current_user.date_of_birth
+            else None,
+            "phone": current_user.phone,
+            "address": current_user.address,
+        }
+
+        upload_dir = os.path.join(settings.upload_path, "symptom_chat")
+        file_results = []
+        document_texts = []
+        extracted_file_contexts = []
+        for uploaded_file in uploaded_files:
+            file_result = await _save_and_extract_chat_file(uploaded_file, db, upload_dir)
+            file_content = file_result.pop("content", "")
+            file_results.append(file_result)
+            if file_result.get("status") == "processed" and file_content:
+                truncated_content = _truncate_chat_text(file_content)
+                document_texts.append(truncated_content)
+                extracted_file_contexts.append(
+                    {
+                        "filename": file_result.get("filename"),
+                        "content": truncated_content,
+                    }
+                )
+
+        ai_config_reloaded = await ai_service.reload_config_from_db(db)
+        if ai_config_reloaded:
+            logger.info("AI configuration reloaded for symptom chat")
+        else:
+            logger.warning("Using fallback AI configuration for symptom chat")
+
+        kb_result = await ai_service.query_knowledge_base(
+            symptoms=cleaned_message or "用户上传了检查资料，请结合资料进行症状问诊",
+            disease_category="general",
+            patient_info=patient_info,
+            document_texts=document_texts,
+        )
+
+        file_context = "\n\n".join(
+            [
+                f"【附件 {index + 1}: {item.get('filename')}】\n{item.get('content')}"
+                for index, item in enumerate(extracted_file_contexts)
+            ]
+        )
+
+        knowledge_context = "\n\n".join(
+            [
+                "【RAG 疾病/知识片段】",
+                _truncate_chat_text(kb_result.get("diseases_info", "")),
+                "【RAG 指南片段】",
+                _truncate_chat_text(kb_result.get("guidelines_info", "")),
+            ]
+        )
+
+        system_prompt = (
+            "你是 肥胖症健康助手 患者端的症状问诊助手。请使用中文、口吻清晰友好，"
+            "基于患者问题、上传资料解析结果和系统 RAG 知识库进行健康问答。"
+            "你可以解释可能原因、建议补充信息、提示何时就医，但不能替代线下面诊或给出确定诊断。"
+            "如果资料解析失败，请明确说明无法读取该附件。"
+        )
+        if language == "en":
+            system_prompt = (
+                "You are the Obesity Health Assistant patient symptom consultation assistant. "
+                "Use the user's message, extracted uploaded files, and RAG medical knowledge. "
+                "Explain possible causes, ask useful follow-up questions, and advise when to seek care, "
+                "but do not replace an in-person diagnosis."
+            )
+
+        user_prompt = f"""
+患者基本信息：
+{json.dumps(patient_info, ensure_ascii=False)}
+
+本轮问题：
+{cleaned_message or "请结合我上传的资料进行症状问诊。"}
+
+上传资料解析内容：
+{file_context or "本轮未成功解析到附件文本。"}
+
+系统 RAG 知识库检索内容：
+{knowledge_context or "未检索到可用知识库内容。"}
+
+请直接回答患者，并在必要时列出下一步需要补充的信息或检查建议。
+"""
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(_normalize_chat_history(history))
+        messages.append({"role": "user", "content": _truncate_chat_text(user_prompt, 14000)})
+
+        model_result = await ai_service.chat_with_glm(messages)
+        if not model_result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=model_result.get("error", "AI 模型调用失败"),
+            )
+
+        return {
+            "success": True,
+            "reply": model_result.get("content", ""),
+            "model_used": ai_service.model_id,
+            "tokens_used": model_result.get("usage", {}).get("total_tokens", 0),
+            "files": file_results,
+            "knowledge_base": {
+                "queried": kb_result.get("success", False),
+                "source": kb_result.get("source", ""),
+                "selection_reasoning": kb_result.get("rag_info", {}).get(
+                    "selection_reasoning", ""
+                ),
+                "sources": _build_chat_sources(kb_result),
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Symptom chat failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"症状问诊失败: {str(e)}",
         )
 
 

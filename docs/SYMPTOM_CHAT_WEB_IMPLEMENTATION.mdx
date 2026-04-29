@@ -1,0 +1,85 @@
+# 患者端「症状问诊」实现说明
+
+## 目标
+
+在网页患者端新增一个可多轮交互的「症状问诊」页面，让患者不必创建正式病历，也能直接调用系统管理员配置的后端 LLM，并结合原有 RAG 知识库、上传资料解析结果和语音转文字进行问答。
+
+本次只覆盖 Web 前端，不修改小程序和 Android 客户端。
+
+## 前端入口
+
+- 新页面：`frontend/src/pages/patient/SymptomChat.tsx`
+- 患者路由：`/patient/symptom-chat`
+- 患者侧边栏导航：新增菜单项「症状问诊」
+- API 封装：`frontend/src/services/api.ts` 新增 `aiApi.symptomChat(...)`
+
+页面能力：
+
+1. 多轮聊天：保留当前页面内的历史消息，发送时传给后端作为上下文。
+2. 多文件上传：一次可选择或拖拽上传多张图片、PDF、DOC/DOCX、TXT、MD。
+3. 语音转文字：使用浏览器 Web Speech API，将患者语音识别结果写入输入框。
+4. RAG 可视化提示：展示本次模型、Token、附件解析状态和知识库检索状态。
+
+## 后端接口
+
+新增接口：
+
+```http
+POST /api/v1/ai/symptom-chat
+Content-Type: multipart/form-data
+```
+
+表单字段：
+
+- `message`：本轮患者输入。
+- `history`：前端传入的历史对话 JSON。
+- `language`：语言标识，当前前端固定传 `zh`。
+- `files`：可重复出现的上传文件字段。
+
+返回内容包括：
+
+- `reply`：LLM 回复。
+- `model_used` / `tokens_used`：实际使用的模型与 Token 信息。
+- `files`：每个附件的解析状态、预览和错误信息。
+- `knowledge_base`：是否检索 RAG、来源、选择理由和片段预览。
+
+## 文件解析策略
+
+后端接口位于 `backend/app/api/api_v1/endpoints/ai.py`，文件处理逻辑为：
+
+1. `txt` / `md` / `markdown`：直接按 UTF-8 读取本地文本。
+2. 图片、PDF、DOC/DOCX：保存到 `settings.upload_path/symptom_chat` 后调用现有 `MinerUService` 解析。
+3. 解析失败不会中断整次问诊；后端会把该附件标记为 `failed`，并继续使用患者文字和已成功解析的附件进行问答。
+
+注意：MinerU 解析本地文件仍依赖项目原有机制，需要 OSS 或 `PUBLIC_FILE_URL` 能提供公网可访问文件 URL。
+
+## RAG 接入方式
+
+症状问诊没有新建独立知识库，而是复用现有 `ai_service.query_knowledge_base(...)`：
+
+1. 将患者本轮输入作为症状查询文本。
+2. 将附件解析文本作为 `document_texts` 传入 RAG 检索。
+3. RAG 检索结果中的疾病知识、指南片段和选择理由被拼入最终 prompt。
+4. 最终使用管理员端配置的诊断模型，通过 `ai_service.chat_with_glm(...)` 调用后端 LLM。
+
+因此，管理员端配置的模型地址、模型 ID、provider、API key 策略仍然统一生效。
+
+## 数据持久化说明
+
+当前「症状问诊」定位为轻量聊天：
+
+- 不创建 `medical_cases` 病历。
+- 不写入 `medical_documents` 表。
+- 上传文件仅保存到本地上传目录用于本轮解析。
+- 聊天历史只保存在前端页面状态，刷新页面后不会保留。
+
+如果后续希望把问诊转为正式病历，可以在该接口后追加保存 `medical_cases`、`medical_documents` 和 `ai_diagnosis_logs` 的流程。
+
+## 已修改文件
+
+- `backend/app/api/api_v1/endpoints/ai.py`
+- `frontend/src/pages/patient/SymptomChat.tsx`
+- `frontend/src/services/api.ts`
+- `frontend/src/types/index.ts`
+- `frontend/src/App.tsx`
+- `frontend/src/components/layout/PatientLayout.tsx`

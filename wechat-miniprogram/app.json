@@ -1,0 +1,43 @@
+{
+  "pages": [
+    "pages/login/index",
+    "pages/register/index",
+    "pages/dashboard/index",
+    "pages/symptom-submit/index",
+    "pages/medical-records/index",
+    "pages/profile/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "医疗智能助手",
+    "navigationBarBackgroundColor": "#0b5ed7",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f7fb",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#666666",
+    "selectedColor": "#0b5ed7",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/dashboard/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/symptom-submit/index",
+        "text": "症状"
+      },
+      {
+        "pagePath": "pages/medical-records/index",
+        "text": "病历"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

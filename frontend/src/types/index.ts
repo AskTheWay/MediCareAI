@@ -275,6 +275,34 @@ export interface KnowledgeSource {
   selection_reason?: string;
 }
 
+export interface SymptomChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface SymptomChatFileResult {
+  filename: string;
+  stored_filename?: string;
+  file_type?: string;
+  status: 'processed' | 'failed';
+  content_preview?: string;
+  error?: string;
+}
+
+export interface SymptomChatResponse {
+  success: boolean;
+  reply: string;
+  model_used?: string;
+  tokens_used?: number;
+  files?: SymptomChatFileResult[];
+  knowledge_base?: {
+    queried: boolean;
+    source?: string;
+    selection_reasoning?: string;
+    sources?: KnowledgeSource[];
+  };
+}
+
 export interface FollowUpPlan {
   recommended_date?: string;
   type?: string;

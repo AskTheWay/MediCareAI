@@ -10,7 +10,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "0.0.0.0:5432:5432"
+      - "0.0.0.0:5433:5432"
     networks:
       - medicare_network
     restart: always
@@ -27,7 +27,7 @@ services:
     container_name: medicare_redis
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     ports:
-      - "0.0.0.0:6379:6379"
+      - "0.0.0.0:6380:6379"
     volumes:
       - redis_data:/data
     networks:

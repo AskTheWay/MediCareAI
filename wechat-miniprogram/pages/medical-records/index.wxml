@@ -1,0 +1,65 @@
+<view class="container">
+  <view class="card">
+    <view class="title">病历记录</view>
+
+    <view class="field mt">
+      <text class="label">搜索</text>
+      <input class="input" value="{{keyword}}" bindinput="onKeywordInput" placeholder="症状 / 诊断 / 标题" />
+    </view>
+
+    <view wx:if="{{error}}" class="status status-error">{{error}}</view>
+
+    <view wx:if="{{filteredRecords.length === 0}}" class="empty-tip">暂无病历记录，可先前往“症状提交”创建。</view>
+
+    <block wx:for="{{filteredRecords}}" wx:key="id">
+      <view class="record-item" data-id="{{item.id}}" bindtap="openRecord">
+        <view class="record-header">
+          <view class="record-title">{{item.title || '智能诊断'}}</view>
+          <view class="badge">{{item._severityText}}</view>
+        </view>
+        <view class="muted">{{item._createdText}}</view>
+        <view class="record-snippet">{{item.symptoms}}</view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{selectedRecord}}" class="overlay" catchtouchmove="noop">
+    <view class="detail-card">
+      <view class="detail-title">{{selectedRecord.title || '智能诊断'}}</view>
+      <view class="muted">{{selectedRecord._createdText}} | 状态：{{selectedRecord._statusText || '-'}}</view>
+
+      <view class="section-title mt">症状</view>
+      <view class="detail-text">{{selectedRecord.symptoms}}</view>
+
+      <view class="section-title mt">诊断结果</view>
+      <view class="detail-text">{{selectedRecord.diagnosis || '暂无诊断内容。'}}</view>
+
+      <view class="section-title mt">医生评论</view>
+      <view wx:if="{{comments.length === 0}}" class="empty-tip">暂无评论，医生回复后会在这里显示。</view>
+
+      <block wx:for="{{comments}}" wx:key="id">
+        <view class="comment-item">
+          <view class="comment-title">{{item.doctor_name}} ({{item.comment_type || '普通'}})</view>
+          <view class="muted">{{item.created_at}}</view>
+          <view class="detail-text">{{item.content}}</view>
+
+          <input class="input mt" data-comment-id="{{item.id}}" value="{{replyInputs[item.id]}}" bindinput="onReplyInput" placeholder="回复该评论" />
+          <button size="mini" class="btn-mini btn-secondary" data-comment-id="{{item.id}}" bindtap="submitReply">发送回复</button>
+
+          <view wx:if="{{item.patient_replies && item.patient_replies.length}}" class="reply-list">
+            <block wx:for="{{item.patient_replies}}" wx:key="id">
+              <view class="reply-item">
+                <view class="muted">{{item.created_at}}</view>
+                <view>{{item.content}}</view>
+              </view>
+            </block>
+          </view>
+        </view>
+      </block>
+
+      <view class="row mt">
+        <button class="btn btn-secondary" bindtap="closeRecord">关闭</button>
+      </view>
+    </view>
+  </view>
+</view>

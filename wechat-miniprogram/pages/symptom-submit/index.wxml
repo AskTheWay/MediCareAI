@@ -1,0 +1,95 @@
+<view class="container">
+  <view class="card">
+    <view class="title">症状提交</view>
+    <view class="subtitle">创建病历 + 上传资料 + 智能诊断</view>
+    <view class="helper">建议描述持续时间、诱因和变化过程，信息越完整，建议越有参考价值。</view>
+
+    <view class="field">
+      <text class="label">症状描述</text>
+      <textarea class="textarea" value="{{form.symptoms}}" data-field="symptoms" bindinput="onInput" placeholder="请详细描述您的症状" />
+    </view>
+
+    <view class="field">
+      <text class="label">严重程度</text>
+      <picker mode="selector" range="{{severityOptions}}" range-key="label" value="{{severityIndex}}" bindchange="onSeverityChange">
+        <view class="picker">{{severityOptions[severityIndex].label}}</view>
+      </picker>
+    </view>
+
+    <view class="field">
+      <text class="label">持续时间</text>
+      <input class="input" data-field="duration" value="{{form.duration}}" bindinput="onInput" placeholder="例如：3天" />
+    </view>
+
+    <view class="field">
+      <text class="label">发作日期</text>
+      <picker mode="date" value="{{form.onset_time}}" bindchange="onOnsetDateChange">
+        <view class="picker">{{form.onset_time || '请选择日期'}}</view>
+      </picker>
+    </view>
+
+    <view class="field">
+      <text class="label">诱因</text>
+      <input class="input" data-field="triggers" value="{{form.triggers}}" bindinput="onInput" placeholder="选填" />
+    </view>
+
+    <view class="field">
+      <text class="label">既往病史</text>
+      <textarea class="textarea" data-field="previous_diseases" value="{{form.previous_diseases}}" bindinput="onInput" placeholder="选填" />
+    </view>
+
+    <view class="field">
+      <text class="label">允许共享给医生</text>
+      <switch checked="{{form.share_with_doctors}}" bindchange="onShareSwitch" />
+    </view>
+
+    <view class="field">
+      <text class="label">上传资料</text>
+      <button class="btn btn-secondary" bindtap="chooseFiles">选择文件</button>
+      <view wx:if="{{files.length === 0}}" class="empty-tip">暂未选择文件，可上传检查报告、化验单或处方图片。</view>
+      <block wx:for="{{files}}" wx:key="path">
+        <view class="file-row">
+          <view>
+            <view class="file-name">{{item.name}}</view>
+            <view class="muted">{{item.sizeText}}</view>
+          </view>
+          <button size="mini" class="btn-mini btn-neutral" data-index="{{index}}" bindtap="removeFile">删除</button>
+        </view>
+      </block>
+    </view>
+
+    <view class="field" wx:if="{{form.share_with_doctors}}">
+      <text class="label">@医生（选填）</text>
+      <view wx:if="{{doctors.length === 0}}" class="empty-tip">暂无可选医生，仍可提交诊断并稍后分享。</view>
+      <checkbox-group bindchange="onDoctorSelectionChange">
+        <block wx:for="{{doctors}}" wx:key="id">
+          <label class="doctor-option">
+            <checkbox value="{{item.id}}" checked="{{selectedDoctorIdSet[item.id]}}" />
+            <view>
+              <view>{{item.display_name}}</view>
+              <view class="muted">{{item.hospital || '-'}} | {{item.specialty || '-'}}</view>
+            </view>
+          </label>
+        </block>
+      </checkbox-group>
+    </view>
+
+    <view wx:if="{{error}}" class="status status-error">{{error}}</view>
+    <view wx:if="{{progressText}}" class="status status-info">{{progressText}}</view>
+
+    <view class="row">
+      <button class="btn btn-primary" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submitDiagnosis">提交诊断</button>
+      <button class="btn btn-secondary" bindtap="resetForm">重置</button>
+    </view>
+  </view>
+
+  <view class="card mt" wx:if="{{diagnosisResult}}">
+    <view class="section-title">智能诊断结果</view>
+    <view class="status status-success">仅供健康管理参考，不能替代医生面对面诊疗。</view>
+    <view class="result-meta">
+      <text class="badge">模型：{{diagnosisResult.model_used || '-'}}</text>
+      <text class="badge">令牌数：{{diagnosisResult.tokens_used || 0}}</text>
+    </view>
+    <view class="result-text">{{diagnosisResult.diagnosis}}</view>
+  </view>
+</view>

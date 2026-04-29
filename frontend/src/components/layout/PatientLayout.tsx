@@ -20,6 +20,7 @@ import {
 import {
   Home,
   AddCircle,
+  Chat,
   MedicalServices,
   Person,
   Menu as MenuIcon,
@@ -55,6 +56,7 @@ const PatientLayout: React.FC = () => {
   const menuItems = [
     { path: '/patient', label: '首页', icon: <Home /> },
     { path: '/patient/profile', label: '个人中心', icon: <Person /> },
+    { path: '/patient/symptom-chat', label: '症状问诊', icon: <Chat /> },
     { path: '/patient/symptom-submit', label: '症状提交', icon: <AddCircle /> },
     { path: '/patient/medical-records', label: '诊疗记录', icon: <MedicalServices /> },
   ];
@@ -63,7 +65,7 @@ const PatientLayout: React.FC = () => {
     <Box>
       <Toolbar>
         <Typography variant="h6" noWrap component="div">
-          MediCareAI
+          健康助手
         </Typography>
       </Toolbar>
       <Divider />

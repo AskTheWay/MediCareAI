@@ -1,0 +1,11 @@
+.auth-card {
+  margin-top: 92rpx;
+}
+
+.auth-card .title {
+  letter-spacing: 2rpx;
+}
+
+.auth-card .helper {
+  margin-bottom: 6rpx;
+}

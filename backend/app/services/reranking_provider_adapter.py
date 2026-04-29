@@ -297,13 +297,8 @@ class CustomRerankAdapter(RerankProviderAdapter):
     def get_rerank_url(self) -> str:
         """自定义rerank端点"""
         base = self.api_url.rstrip("/")
-        # 尝试常见的rerank端点路径
-        if "/v1" in base:
-            return f"{base}/reranks"
-        return f"{base}/v1/reranks"
-        """自定义rerank端点"""
-        base = self.api_url.rstrip("/")
-        # 尝试常见的rerank端点路径
+        if base.endswith("/rerank") or base.endswith("/reranks"):
+            return base
         if "/v1" in base:
             return f"{base}/rerank"
         return f"{base}/v1/rerank"

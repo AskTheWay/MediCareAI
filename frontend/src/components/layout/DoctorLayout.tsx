@@ -67,7 +67,7 @@ const DoctorLayout: React.FC = () => {
     <Box>
       <Toolbar>
         <Typography variant="h6" noWrap component="div">
-          MediCareAI
+          健康助手
         </Typography>
       </Toolbar>
       <Divider />

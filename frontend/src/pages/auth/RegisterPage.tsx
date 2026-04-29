@@ -174,7 +174,7 @@ const RegisterPage: React.FC = () => {
               注册账户
             </Typography>
             <Typography variant="subtitle1" color="text.secondary">
-              加入 MediCareAI，开始智能诊疗之旅
+              加入健康助手，开始智能诊疗之旅
             </Typography>
           </Box>
 
@@ -586,7 +586,7 @@ const RegisterPage: React.FC = () => {
                 重要提示
               </Typography>
               <Typography variant="body2" paragraph>
-                欢迎使用 MediCareAI（以下简称"本服务"）！本协议是您（以下简称"用户"）与本服务提供方（以下简称"我们"）之间就使用 MediCareAI 服务所订立的协议。请您在使用本服务前仔细阅读并充分理解本协议的全部内容。当您点击"同意"按钮、注册账号或以其他任何方式使用本服务时，即表示您已阅读、理解并同意接受本协议的全部约束。若您不同意本协议的任何内容，请勿使用本服务。
+                欢迎使用健康助手（以下简称"本服务"）！本协议是您（以下简称"用户"）与本服务提供方（以下简称"我们"）之间就使用健康助手服务所订立的协议。请您在使用本服务前仔细阅读并充分理解本协议的全部内容。当您点击"同意"按钮、注册账号或以其他任何方式使用本服务时，即表示您已阅读、理解并同意接受本协议的全部约束。若您不同意本协议的任何内容，请勿使用本服务。
               </Typography>
 
               <Typography variant="body1" paragraph sx={{ fontWeight: 'bold', mt: 2 }}>
@@ -676,7 +676,7 @@ const RegisterPage: React.FC = () => {
                 特别提示
               </Typography>
               <Typography variant="body2" paragraph>
-                1. MediCareAI 是医疗辅助工具，AI诊断结果仅供参考，不替代专业医生的诊断<br />
+                1. 健康助手是医疗辅助工具，AI诊断结果仅供参考，不替代专业医生的诊断<br />
                 2. 您上传的所有文档和医疗信息将受到严格保护，我们将按照法律法规要求进行处理<br />
                 3. 使用本服务即表示您理解并接受以上条款<br /><br />
                 如对本协议有任何疑问，请联系我们：邮箱：hougelangley1987@gmail.com
@@ -695,7 +695,7 @@ const RegisterPage: React.FC = () => {
               </Typography>
 
               <Typography variant="body1" paragraph sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                欢迎使用 MediCareAI（以下简称"我们"或"本服务"）！
+                欢迎使用健康助手（以下简称"我们"或"本服务"）！
               </Typography>
               <Typography variant="body2" paragraph>
                 我们深知个人信息对您的重要性，并将按照法律法规的要求，采取相应的安全保护措施，尽力保护您的个人信息安全可控。本隐私政策将帮助您了解我们如何收集、使用、存储、保护您的个人信息。
@@ -935,7 +935,7 @@ const RegisterPage: React.FC = () => {
               </Typography>
 
               <Typography variant="body2" paragraph sx={{ mt: 2, fontStyle: 'italic' }}>
-                感谢您对 MediCareAI 的信任与支持！
+                感谢您对健康助手的信任与支持！
               </Typography>
             </DialogContent>
             <DialogActions>

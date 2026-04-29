@@ -1,0 +1,15 @@
+.mt {
+  margin-top: 20rpx;
+}
+
+.disease-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid #e2e8f0;
+}
+
+.disease-title {
+  font-weight: 600;
+}

@@ -1,0 +1,916 @@
+# MediCareAI 服务端技术栈与实现总结
+
+## 1. 文档目的
+
+这份文档用于总结 `MediCareAI/backend` 当前服务端的技术栈、架构分层、核心数据模型、关键业务链路、配置机制与部署方式，方便后续开发者或其他 AI 在不通读全部源码的前提下，快速理解系统的真实实现。
+
+说明：
+
+- 本文基于当前代码仓库中的实际实现整理，而不是基于 README 中的产品介绍。
+- 重点描述“现在系统是如何工作的”，同时标注若干实现特征与注意事项。
+- 文中路径均为仓库内相对路径。
+
+---
+
+## 2. 服务端总览
+
+MediCareAI 服务端本质上是一个基于 FastAPI 的异步医疗管理后端，围绕“患者-医生-管理员”三类角色构建，核心能力包括：
+
+- 统一账号认证与平台权限控制
+- 患者档案、病例、文档与慢病数据管理
+- AI 问诊与综合诊断
+- 文档抽取、PII 隐私清洗与结构化内容复用
+- 知识库管理、向量检索与 RAG 诊断增强
+- 医患共享、医生评论、内部消息与邮件通知
+- 管理员模型配置、监控、审核与运维入口
+
+整体上，它不是一个单一的“聊天接口”，而是一套带业务状态、数据模型和管理后台的完整后端系统。
+
+---
+
+## 3. 技术栈总结
+
+### 3.1 Web 与运行时
+
+| 层 | 技术 | 用途 |
+| --- | --- | --- |
+| Web 框架 | FastAPI | 对外提供 REST API |
+| ASGI 服务 | Uvicorn | 运行 FastAPI 应用 |
+| Python 版本 | Python 3.12 | 后端主运行时 |
+| 中间件 | CORS、TrustedHost、ProxyHeaders、自定义日志、Prometheus 中间件 | 安全、反向代理适配、监控与请求日志 |
+
+### 3.2 数据与 ORM
+
+| 层 | 技术 | 用途 |
+| --- | --- | --- |
+| 关系数据库 | PostgreSQL | 核心业务数据存储 |
+| 向量能力 | pgvector 镜像 | 供知识库向量检索使用 |
+| ORM | SQLAlchemy 2.0 Async | 异步数据库访问 |
+| 驱动 | asyncpg | PostgreSQL 异步驱动 |
+| 迁移 | Alembic + 自定义迁移脚本 | 数据库结构升级 |
+
+### 3.3 配置与校验
+
+| 层 | 技术 | 用途 |
+| --- | --- | --- |
+| 数据校验 | Pydantic v2 | 请求与响应模型 |
+| 配置管理 | pydantic-settings | `.env` 与环境变量读取 |
+| 环境文件 | python-dotenv | 本地环境变量加载 |
+
+### 3.4 认证与安全
+
+| 层 | 技术 | 用途 |
+| --- | --- | --- |
+| Token | JWT (`python-jose`) | 访问令牌与刷新令牌 |
+| 密码哈希 | passlib + bcrypt | 用户密码存储 |
+| API Key 加密 | cryptography/Fernet | AI 模型密钥数据库加密存储 |
+| 上传支持 | python-multipart | 文件上传 |
+
+### 3.5 外部服务与 AI 集成
+
+| 能力 | 技术/服务 | 说明 |
+| --- | --- | --- |
+| HTTP 客户端 | httpx、aiohttp | 调用外部 AI、MinerU、临时文件托管等服务 |
+| AI 模型调用 | OpenAI 兼容接口 + Provider Adapter | 统一适配 OpenAI、智谱、Kimi、DeepSeek、Ollama、vLLM、LM Studio、自定义接口 |
+| 文档抽取 | MinerU | PDF/图片等文档抽取 |
+| 对象存储 | 阿里云 OSS (`oss2`) | 文档临时外链与云端文件承载 |
+| 嵌入模型 | OpenAI 兼容 Embedding / DashScope | 向量化知识库内容 |
+| Rerank | 百炼、Cohere、Jina、博查、自定义 | 对 RAG 检索结果重排 |
+
+### 3.6 运维与监控
+
+| 能力 | 技术 | 说明 |
+| --- | --- | --- |
+| 主机监控 | psutil | CPU/内存/磁盘采集 |
+| 容器状态 | docker SDK | 读取容器状态与资源信息 |
+| 指标采集 | prometheus-client | 暴露 Prometheus 指标 |
+| Redis | redis-py | 当前主要用于连通性检查与运行环境配套 |
+
+### 3.7 部署方式
+
+| 层 | 技术 | 说明 |
+| --- | --- | --- |
+| 容器化 | Docker | 打包后端、前端、Nginx |
+| 编排 | Docker Compose | 统一拉起 postgres、redis、backend、frontend、nginx |
+| 反向代理 | Nginx | 提供不同平台入口与 HTTPS 支持 |
+
+补充说明：
+
+- `requirements.txt` 中包含 `celery`，但当前后端代码里没有看到成型的 Celery worker/任务调度链路，说明这是保留依赖或未来扩展位。
+- Redis 在当前代码中不是业务主路径的强依赖，更偏基础设施与状态检查配套。
+
+---
+
+## 4. 目录与分层结构
+
+服务端主要位于 `backend/app`，采用“API 层 -> Service 层 -> DB/Model 层 -> Core 工具层”的分层方式。
+
+```text
+backend/
+  app/
+    main.py                     # FastAPI 入口
+    api/api_v1/                 # 路由聚合与各业务 endpoint
+    core/                       # 配置、安全、依赖注入、监控基础能力
+    db/                         # 数据库连接、初始化、种子数据
+    models/                     # SQLAlchemy 模型
+    schemas/                    # Pydantic 请求/响应模型
+    services/                   # 业务服务、AI、RAG、文档处理、监控等
+    migrations/versions/        # Alembic 迁移脚本
+  migrations/                   # 自定义迁移脚本
+  init_db.py                    # 初始化数据库
+  init_admin.py                 # 初始化管理员
+  entrypoint.sh                 # 容器启动入口
+  Dockerfile                    # 后端镜像构建文件
+```
+
+### 4.1 入口层
+
+`backend/app/main.py` 负责：
+
+- 创建 FastAPI 应用
+- 注册 CORS、TrustedHost、ProxyHeaders、中间件日志、Prometheus 中间件
+- 提供 `/health`
+- 在 `DEBUG=true` 时开放 `/docs` 与 `/redoc`
+- 将全部业务路由挂载到 `/api/v1`
+
+这意味着系统的正式 API 前缀是：
+
+- `GET /health`
+- `GET /docs`、`GET /redoc`（仅调试模式）
+- `ANY /api/v1/...`
+
+### 4.2 路由层
+
+`backend/app/api/api_v1/api.py` 聚合了主要模块：
+
+- `/auth`
+- `/patients`
+- `/medical-cases`
+- `/documents`
+- `/ai`
+- `/api/v1/knowledge`
+- `/vector-embedding`
+- `/sharing`
+- `/doctor`
+- `/admin`
+- `/admin/email-config`
+- `/admin/email-providers`
+- `/monitoring`
+- `/messages`
+- 慢病相关接口
+
+### 4.3 服务层
+
+服务层是系统的实现重心，典型模块包括：
+
+- `user_service.py`
+- `patient_service.py`
+- `medical_case_service.py`
+- `document_service.py`
+- `mineru_service.py`
+- `pii_cleaner_service.py`
+- `ai_service.py`
+- `ai_provider_adapters.py`
+- `knowledge_base_service.py`
+- `multi_path_rag_selector.py`
+- `vector_embedding_service.py`
+- `reranking_service.py`
+- `ai_model_config_service.py`
+- `system_monitoring_service.py`
+- `email_service.py`
+- `data_sharing_service.py`
+
+### 4.4 数据层
+
+数据层由两部分组成：
+
+- `models/models.py`：核心业务表
+- `models/ai_model_config.py`：AI 配置表
+
+数据库访问基于 `db/database.py` 中的异步 engine 和 `AsyncSessionLocal`。
+
+---
+
+## 5. 核心架构设计
+
+### 5.1 统一用户模型 + 平台权限
+
+系统最核心的设计之一是“统一用户表 + 平台权限”。
+
+`users` 表既承载患者，也承载医生与管理员，通过 `role` 区分：
+
+- `patient`
+- `doctor`
+- `admin`
+
+但仅有角色还不够，JWT 中还会带一个 `platform` 声明，表示用户当前以哪个平台身份进入系统：
+
+- `patient`
+- `doctor`
+- `admin`
+
+这意味着权限判断是两层的：
+
+1. 角色是否允许访问该能力
+2. 当前 token 所属平台是否匹配该入口
+
+例如：
+
+- 患者只能进入患者端
+- 医生可具备患者端和医生端访问能力
+- 管理员可进入患者端、医生端、管理员端
+
+这套设计使一个账号可以在多平台之间切换，但仍保留严格的平台边界。
+
+### 5.2 Service 驱动的业务实现
+
+API Endpoint 本身主要负责：
+
+- 接收请求
+- 鉴权
+- 参数校验
+- 组装输入
+- 调用 Service
+- 返回 HTTP 响应
+
+真正的业务逻辑放在 Service 层。这样做的好处是：
+
+- 业务逻辑相对集中
+- 便于复用
+- 后续做后台任务、脚本调用或多端复用更容易
+
+### 5.3 文件知识库 + 向量知识库并存
+
+当前系统的知识库不是单一实现，而是混合架构：
+
+- 一部分基于本地 JSON/文件目录读取
+- 一部分基于数据库中的知识块和向量检索
+- RAG 检索时优先走多路径选择器，必要时回退到旧式文件知识库加载
+
+这说明系统在演进中保留了兼容层，既支持较新的向量化知识库，也兼容旧版资料组织方式。
+
+---
+
+## 6. 主要数据模型
+
+`backend/app/models/models.py` 定义了绝大多数业务表。下面按业务域进行归纳。
+
+### 6.1 账号与认证
+
+#### `User`
+
+统一用户表，字段涵盖：
+
+- 基础认证：邮箱、密码哈希、角色、激活状态
+- 邮箱验证：验证 token、发送时间、验证时间
+- 密码重置：重置 token、发送时间
+- 患者字段：生日、性别、地址、紧急联系人
+- 医生字段：职称、科室、专业方向、专长、医院、执照号、医生审核状态
+- 管理员字段：管理级别
+- 登录信息：最后登录时间
+
+#### `UserSession`
+
+存储当前用户的 JWT 会话状态，用于：
+
+- 登录后标记新 session
+- 注销时失活 session
+- 跟踪当前活跃 token 状态
+
+#### `AuditLog`
+
+安全审计与操作轨迹记录。
+
+### 6.2 患者与病例
+
+#### `Patient`
+
+虽然系统已经有统一 `User` 表，但仍保留 `Patient` 表存放患者细化资料，说明当前实现处于“统一用户模型”和“独立患者模型”并存阶段。
+
+#### `MedicalCase`
+
+核心病例表，承载：
+
+- 症状描述
+- 诊断信息
+- 患者关联
+- 病种关联
+- 与 AI、医生评论、文档等其他实体的关系
+
+#### `MedicalDocument`
+
+病例附件表，记录：
+
+- 原始文件名与存储路径
+- 文件类型与大小
+- 上传状态
+- 抽取结果
+- 清洗后的内容
+- PII 检测结果
+- 清洗置信度
+
+#### `AIFeedback`
+
+记录 AI 诊断结果，作为病例历史的一部分保留。
+
+#### `FollowUp`
+
+随访相关计划与状态。
+
+### 6.3 慢病管理
+
+#### `ChronicDisease`
+
+慢病定义主数据。
+
+#### `PatientChronicCondition`
+
+患者与慢病之间的关联表，用于记录患者已知慢病或长期病程。
+
+### 6.4 医患协作与共享
+
+#### `DataSharingConsent`
+
+患者对共享行为的授权记录，支持：
+
+- 平台匿名共享
+- 指定医生共享
+
+#### `SharedMedicalCase`
+
+匿名化后的共享病例副本，供医生浏览或研究使用。
+
+#### `DoctorPatientRelation`
+
+医生与患者之间的关系表，支持：
+
+- 患者 @ 医生
+- 指定病例共享
+- 状态流转
+
+#### `DoctorCaseComment`
+
+医生对病例的专业评论。
+
+#### `CaseCommentReply`
+
+患者对医生评论的回复。
+
+### 6.5 知识库与 RAG
+
+#### `VectorEmbeddingConfig`
+
+嵌入模型配置表，记录：
+
+- provider
+- model_id
+- api_url
+- api_key
+- 向量维度
+- 是否激活/默认
+- 测试状态
+
+#### `KnowledgeBaseChunk`
+
+知识库切块后的内容单元，是向量检索和 RAG 的核心实体。
+
+#### `CaseKnowledgeMatch`
+
+病例与知识库命中结果之间的关联信息。
+
+### 6.6 运维、监控与后台
+
+#### `SystemResourceLog`
+
+系统资源采样日志，记录 CPU、内存、磁盘、容器状态等。
+
+#### `AIDiagnosisLog`
+
+AI 请求日志，记录：
+
+- 请求类型
+- 耗时
+- token 使用量
+- 成功/失败状态
+- 是否异常
+- 异常原因
+
+#### `AdminOperationLog`
+
+管理员行为记录。
+
+#### `DoctorVerification`
+
+医生审核资料与审核状态。
+
+#### `InternalMessage`
+
+内部站内信，主要用于医生与管理员沟通。
+
+#### `EmailConfiguration`
+
+邮件服务动态配置。
+
+### 6.7 AI 配置模型
+
+`backend/app/models/ai_model_config.py` 中定义 `AIModelConfiguration`，用于保存 AI 模型配置：
+
+- `model_type`：如 `diagnosis`、`mineru`、`embedding`、`rerank`
+- `provider`
+- `api_url`
+- `api_key_encrypted`
+- `model_id`
+- `enabled`
+- `config_metadata`
+
+这张表是后台动态切换模型、保存密钥和测试连接的核心。
+
+---
+
+## 7. 关键业务实现链路
+
+### 7.1 登录与鉴权链路
+
+主要文件：
+
+- `app/api/api_v1/endpoints/auth.py`
+- `app/services/user_service.py`
+- `app/core/security.py`
+- `app/core/deps.py`
+
+流程如下：
+
+1. 客户端调用 `/api/v1/auth/login`
+2. 请求体带 `email`、`password`，可选 `platform`
+3. `UserService.authenticate_user()` 校验邮箱、密码和账号状态
+4. 根据角色判断是否允许登录目标平台
+5. 生成带 `role` 与 `platform` 的 access token / refresh token
+6. 写入 `UserSession`
+7. 后续请求经 `HTTPBearer` 取 token，`verify_token()` 解析后再由依赖项做角色/平台校验
+
+这里的重点不是传统“用户登录后只看角色”，而是“角色 + platform token”共同决定可访问资源。
+
+### 7.2 患者注册链路
+
+注册不仅创建 `User`，还会同时创建患者资料，并尝试发出邮箱验证邮件。
+
+流程如下：
+
+1. `/api/v1/auth/register`
+2. `UserService.create_user()` 创建统一用户
+3. `PatientService.create_patient()` 建立患者侧资料
+4. 调用邮件服务发送验证邮件
+5. 如果邮件配置缺失，注册不一定失败，但会记录日志与提示
+
+### 7.3 综合诊断链路
+
+主要文件：
+
+- `app/api/api_v1/endpoints/ai.py`
+- `app/services/ai_service.py`
+- `app/services/ai_provider_adapters.py`
+- `app/services/multi_path_rag_selector.py`
+- `app/services/system_monitoring_service.py`
+
+核心入口是：
+
+- `POST /api/v1/ai/comprehensive-diagnosis`
+
+典型流程：
+
+1. 读取当前用户与患者资料
+2. 根据 `document_ids` 取回已上传并抽取过的文档内容
+3. 汇总症状、病史、患者基础信息、文档文本
+4. 通过 RAG 检索知识库相关内容
+5. 构造 AI messages
+6. 通过 Provider Adapter 调用实际模型
+7. 生成综合诊断结果
+8. 写入病例、AI 反馈、诊断日志
+9. 根据请求决定是否匿名共享或定向分享给医生
+
+实现要点：
+
+- AIService 支持流式与非流式调用
+- 使用统一的 OpenAI 兼容协议封装不同 provider
+- 默认超时较长，适应大模型响应
+- 对本地模型和云模型一视同仁，区别主要在 provider adapter 和 URL
+
+### 7.4 AI Provider 适配层
+
+`app/services/ai_provider_adapters.py` 使用适配器模式统一多家模型服务。
+
+当前支持：
+
+- OpenAI
+- 智谱
+- Kimi
+- DeepSeek
+- Ollama
+- vLLM
+- LM Studio
+- custom
+
+统一抽象包括：
+
+- 获取 chat completions URL
+- 构造 headers
+- 格式化请求体
+- 解析返回体
+- 解析流式响应
+
+这使后台只需要保存 provider、api_url、api_key、model_id，就能切换不同模型服务。
+
+### 7.5 文档上传、抽取与隐私清洗链路
+
+主要文件：
+
+- `app/services/document_service.py`
+- `app/services/mineru_service.py`
+- `app/services/pii_cleaner_service.py`
+- `app/services/oss_service.py`
+- `app/services/temp_file_hosting.py`
+
+流程如下：
+
+1. 患者上传文档，文件先存到 `/app/uploads`
+2. 创建 `MedicalDocument` 记录
+3. 调用抽取接口时，MinerUService 判断文件来源
+4. 如果是本地文件，优先尝试：
+   - 上传 OSS 获取可访问 URL
+   - 使用临时托管服务获取 URL
+   - 回退到本地文件公开地址 `PUBLIC_FILE_URL`
+5. 将 URL 提交给 MinerU 执行抽取
+6. 抽取完成后落库 `extracted_content`
+7. 对抽取文本做 PII 清洗
+8. 将 `cleaned_content`、`pii_detected`、`cleaning_confidence` 等一起落库
+
+这个设计的核心是：MinerU 通常需要可访问的远程文件地址，所以本地文件不能直接送给 MinerU，而是要先经过“上传/暴露 URL”这一步。
+
+### 7.6 知识库与 RAG 检索链路
+
+主要文件：
+
+- `app/services/knowledge_base_service.py`
+- `app/services/vector_embedding_service.py`
+- `app/services/reranking_service.py`
+- `app/services/reranking_provider_adapter.py`
+- `app/services/multi_path_rag_selector.py`
+
+当前知识库是混合实现：
+
+#### 文件型知识库
+
+`knowledge_base_service.py` 提供了模块化文件知识库读取能力，从 `/app/data/knowledge_bases` 读取疾病和指南 JSON。
+
+适用于：
+
+- 启动即带的内置知识
+- 向量化之外的回退加载
+
+#### 向量知识库
+
+向量能力依赖：
+
+- `VectorEmbeddingConfig`
+- `KnowledgeBaseChunk`
+- 嵌入模型配置
+- 检索与匹配逻辑
+
+典型流程：
+
+1. 选定嵌入模型配置
+2. 生成文本向量
+3. 将知识块写入数据库
+4. 查询时按症状、文档、年龄等做多路径召回
+5. 可选地使用 rerank 再排序
+
+#### Rerank
+
+重排支持：
+
+- 阿里云百炼
+- Cohere
+- Jina
+- 博查
+- 自定义接口
+
+若 rerank 配置缺失或调用失败，系统会回退到原始顺序，不阻断主流程。
+
+### 7.7 医患共享与医生协作链路
+
+综合诊断完成后，系统支持两类共享：
+
+- 平台匿名共享
+- 指定医生共享
+
+实现要点：
+
+- 共享前生成 `DataSharingConsent`
+- 共享病例写入 `SharedMedicalCase`
+- 指定医生场景会维护 `DoctorPatientRelation`
+- 医生可对共享病例发表评论
+- 患者可对评论回复
+- 为保护隐私，共享前会尽量使用匿名画像和 PII 清洗内容
+
+### 7.8 管理员后台能力
+
+主要文件：
+
+- `app/api/api_v1/endpoints/admin.py`
+- `app/services/ai_model_config_service.py`
+- `app/services/system_monitoring_service.py`
+
+管理员能力主要包括：
+
+- 仪表盘概览
+- 系统资源监控
+- AI 请求统计与异常检测
+- 医生审核
+- AI 模型配置与测试
+- 邮件配置
+- 知识库管理
+- 服务状态检查
+
+其中 AI 模型配置是比较重要的一块：
+
+1. 后台保存模型配置到数据库
+2. API key 通过 `Fernet` 加密
+3. 配置保存后会同步回写 `.env`
+4. 运行期服务优先尝试从数据库读取配置，必要时回退环境变量
+
+这使系统具备“后台热切换模型”的能力，而不是必须改代码或直接改容器环境变量。
+
+### 7.9 监控与日志
+
+监控能力分为两层：
+
+#### HTTP/Prometheus 层
+
+`app/core/monitoring.py` 采集：
+
+- HTTP 请求总数
+- 请求耗时
+- 请求/响应体大小
+- AI 请求数
+- 数据库查询耗时
+- 医生评论数
+- 病例共享数
+- 活跃用户数等
+
+#### 管理后台资源层
+
+`system_monitoring_service.py` 采集：
+
+- CPU
+- 内存
+- 磁盘
+- Docker 容器状态
+- 数据库基础指标
+- AI 诊断耗时与异常
+
+并将信息写入：
+
+- `SystemResourceLog`
+- `AIDiagnosisLog`
+- `AdminOperationLog`
+
+### 7.10 内部消息与邮件
+
+#### 站内消息
+
+`messages.py` 目前主要用于医生向管理员发消息，支持：
+
+- 新消息
+- 回复消息
+- 已发送列表
+- 会话详情
+
+#### 邮件系统
+
+邮件能力包括：
+
+- 注册邮箱验证
+- 医生审核通过/拒绝/撤销通知
+- SMTP 配置动态读取
+
+这表明邮件不是写死在环境变量里，而是支持后台动态调整。
+
+---
+
+## 8. 配置机制与优先级
+
+### 8.1 基础配置
+
+`app/core/config.py` 中的 `Settings` 负责从 `.env` 读取基础配置，例如：
+
+- `DATABASE_URL`
+- `REDIS_URL`
+- `JWT_SECRET_KEY`
+- `MINERU_TOKEN`
+- `AI_API_URL`
+- `AI_API_KEY`
+- `AI_MODEL_ID`
+- `EMBEDDING_API_URL`
+- `EMBEDDING_MODEL_ID`
+- `OSS_ACCESS_KEY_ID`
+- `OSS_ACCESS_KEY_SECRET`
+- `OSS_BUCKET`
+- `OSS_ENDPOINT`
+- `PUBLIC_FILE_URL`
+
+### 8.2 动态配置
+
+部分关键配置支持从数据库读取：
+
+- 诊断模型
+- MinerU
+- Embedding
+- Rerank
+- 邮件
+- OSS
+
+总体优先级可理解为：
+
+1. 后台数据库配置
+2. 环境变量 / `.env`
+3. 代码默认值
+
+### 8.3 API Key 加密
+
+AI 模型密钥不会以明文持久化到数据库，而是：
+
+1. 从 `API_KEY_MASTER_KEY` 派生 Fernet key
+2. 使用 Fernet 加密 API key
+3. 读配置时再解密
+
+这部分是服务端安全设计里比较重要的一环。
+
+---
+
+## 9. 部署与启动方式
+
+### 9.1 Docker Compose 拓扑
+
+顶层 `docker-compose.yml` 定义了以下核心服务：
+
+- `postgres`
+- `redis`
+- `backend`
+- `frontend`
+- `nginx`
+
+### 9.2 关键基础设施
+
+#### PostgreSQL
+
+- 使用 `pgvector/pgvector:pg17`
+- 暴露到宿主机 `5433`
+- 初始化脚本位于 `docker/postgres/init.sql`
+
+#### Redis
+
+- 使用 `redis:7.4-alpine`
+- 暴露到宿主机 `6380`
+
+#### Backend
+
+- 由 `backend/Dockerfile` 构建
+- 启动命令通过 `entrypoint.sh` 执行
+- 默认运行 `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+- Compose 中附加 `--workers 4`
+- 暴露 `8000`
+
+#### Frontend
+
+- 暴露 `3000`
+
+#### Nginx
+
+- 暴露 `80`、`8080`、`8081`、`443`
+- 用于不同平台入口与反向代理
+
+### 9.3 后端启动流程
+
+`backend/entrypoint.sh` 启动逻辑如下：
+
+1. 等待 PostgreSQL 可用
+2. 执行 `init_db.py`
+3. 执行若干迁移脚本
+4. 初始化管理员账户
+5. 初始化慢病数据
+6. 启动 Uvicorn
+
+这意味着容器启动时不仅是“起服务”，还会做一定程度的数据库初始化与幂等式准备。
+
+---
+
+## 10. 典型请求时序
+
+下面用文字版时序总结一次完整 AI 综合诊断。
+
+```text
+小程序 / Web / 前端
+  -> POST /api/v1/ai/comprehensive-diagnosis
+  -> 鉴权：JWT + role/platform
+  -> 读取患者信息与病例上下文
+  -> 加载 document_ids 对应文档抽取结果
+  -> RAG 检索知识库内容
+  -> 拼接症状 + 患者资料 + 文档内容 + 知识库上下文
+  -> AIService 读取模型配置
+  -> Provider Adapter 调用实际模型
+  -> 得到诊断结果并记录 AIDiagnosisLog
+  -> 写回病例/AI反馈/共享关系
+  -> 返回前端展示
+```
+
+---
+
+## 11. 当前实现特征与注意事项
+
+下面这些点对后续接手者很重要。
+
+### 11.1 统一用户模型与 Patient 表并存
+
+当前系统既有统一 `User`，又保留 `Patient` 表，说明模型处于兼容演进态。理解代码时不要假设“患者信息只在一张表里”。
+
+### 11.2 知识库存在新旧双轨
+
+知识库既有文件读取模式，也有向量检索模式。排查问题时需要先确认本次请求走的是：
+
+- 文件知识库回退
+- 还是向量 RAG 主流程
+
+### 11.3 模型配置优先读数据库
+
+不要只看 `.env`。如果管理员后台已经保存过模型配置，运行时服务通常会优先读数据库配置。
+
+### 11.4 本地模型在 Docker 环境中的地址问题
+
+如果后端跑在 Docker 容器里，而模型服务跑在宿主机，比如 Ollama 跑在 Windows 本机：
+
+- 容器内的 `localhost` 指向容器自身
+- 不能直接把模型地址写成 `http://localhost:11434`
+- 通常应该使用 `http://host.docker.internal:11434`
+
+这是本地部署模型时最常见的联调问题之一。
+
+### 11.5 Redis 与 Celery 不是当前主流程核心
+
+虽然依赖和容器都存在，但从当前代码看：
+
+- Redis 更偏基础设施配套和状态检查
+- Celery 尚未形成清晰的业务主路径
+
+后续若要引入真正的异步任务队列，可以从文档抽取、向量化、诊断日志归档等流程切入。
+
+### 11.6 容器启动时会做初始化动作
+
+`entrypoint.sh` 会做数据库初始化与管理员初始化，因此排查“为什么容器刚启动就改了库”时，需要优先看入口脚本。
+
+---
+
+## 12. 建议优先阅读的源码文件
+
+如果后续要继续维护，建议按下面顺序看源码：
+
+| 优先级 | 文件 | 作用 |
+| --- | --- | --- |
+| 1 | `backend/app/main.py` | 应用入口、全局中间件、API 挂载 |
+| 2 | `backend/app/api/api_v1/api.py` | 所有路由分组总入口 |
+| 3 | `backend/app/models/models.py` | 业务表全貌 |
+| 4 | `backend/app/models/ai_model_config.py` | 模型配置表 |
+| 5 | `backend/app/core/security.py` | JWT 创建与校验 |
+| 6 | `backend/app/core/deps.py` | 鉴权与角色/平台依赖 |
+| 7 | `backend/app/services/user_service.py` | 登录与账号逻辑 |
+| 8 | `backend/app/api/api_v1/endpoints/ai.py` | AI 综合诊断入口 |
+| 9 | `backend/app/services/ai_service.py` | AI 调用主服务 |
+| 10 | `backend/app/services/ai_provider_adapters.py` | 多模型 provider 适配 |
+| 11 | `backend/app/services/document_service.py` | 文档上传、抽取、清洗 |
+| 12 | `backend/app/services/mineru_service.py` | MinerU 调用链 |
+| 13 | `backend/app/services/knowledge_base_service.py` | 知识库文件加载 |
+| 14 | `backend/app/services/vector_embedding_service.py` | 嵌入生成与向量配置 |
+| 15 | `backend/app/services/reranking_service.py` | RAG 重排 |
+| 16 | `backend/app/api/api_v1/endpoints/admin.py` | 后台管理能力总入口 |
+| 17 | `backend/app/services/system_monitoring_service.py` | 监控、日志、异常统计 |
+| 18 | `backend/entrypoint.sh` | 容器启动流程 |
+| 19 | `docker-compose.yml` | 运行拓扑 |
+
+---
+
+## 13. 一句话结论
+
+MediCareAI 服务端不是“给模型套一个 API”的轻量后端，而是一套以 FastAPI 为核心、以 PostgreSQL 为主存、以 AI/RAG/文档抽取为增强能力、以患者/医生/管理员三端协作为业务骨架的完整医疗管理后端。它的关键特点是：
+
+- 统一账号体系
+- 平台化权限控制
+- 动态模型配置
+- 文档抽取与隐私清洗
+- 混合式知识库与 RAG
+- 管理后台驱动的运行时配置和运维能力
+
+如果后续要继续扩展，这套后端最值得保持的设计是：
+
+- Service 分层
+- Provider Adapter 模式
+- 模型配置数据库化
+- 监控与业务日志留痕

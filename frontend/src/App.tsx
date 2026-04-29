@@ -23,6 +23,7 @@ import VerifyEmailPage from './pages/auth/VerifyEmail';
 import PatientLayout from './components/layout/PatientLayout';
 import PatientDashboard from './pages/patient/Dashboard';
 import SymptomSubmit from './pages/patient/SymptomSubmit';
+import SymptomChat from './pages/patient/SymptomChat';
 import MedicalRecords from './pages/patient/MedicalRecords';
 import MedicalRecordDetail from './pages/patient/MedicalRecordDetail';
 import PatientProfile from './pages/patient/Profile';
@@ -127,6 +128,7 @@ function App() {
                     <Route path="/patient" element={<PatientLayout />}>
                       <Route index element={<PatientDashboard />} />
                       <Route path="complete-profile" element={<CompleteProfile />} />
+                      <Route path="symptom-chat" element={<SymptomChat />} />
                       <Route path="symptom-submit" element={<SymptomSubmit />} />
                       <Route path="medical-records" element={<MedicalRecords />} />
                       <Route path="medical-records/:id" element={<MedicalRecordDetail />} />

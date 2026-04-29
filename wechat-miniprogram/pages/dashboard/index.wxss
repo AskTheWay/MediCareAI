@@ -1,0 +1,53 @@
+.mt {
+  margin-top: 20rpx;
+}
+
+.card:first-child {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  border-color: #bfdbfe;
+}
+
+.stats-row {
+  margin-top: 10rpx;
+}
+
+.stat-item {
+  background: #f8fbff;
+  border: 2rpx solid #dbeafe;
+  border-radius: 14rpx;
+  padding: 20rpx 16rpx;
+  text-align: center;
+}
+
+.stat-value {
+  display: block;
+  font-size: 42rpx;
+  font-weight: 700;
+  color: #0b5ed7;
+}
+
+.stat-label {
+  display: block;
+  margin-top: 8rpx;
+  color: #6b7280;
+  font-size: 24rpx;
+}
+
+.record-item {
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid #e2e8f0;
+}
+
+.record-item:last-child {
+  border-bottom: none;
+}
+
+.record-title {
+  font-weight: 600;
+}
+
+.record-meta {
+  font-size: 24rpx;
+  color: #6b7280;
+  margin-top: 6rpx;
+}

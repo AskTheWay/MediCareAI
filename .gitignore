@@ -137,6 +137,7 @@ coverage.xml
 # Temporary files
 *.tmp
 *.temp
+_tmp*
 .cache/
 *.bak
 *.backup
@@ -181,6 +182,9 @@ android/local.properties
 # APK files - build artifacts
 *.apk
 MediCareAI-*.apk
+
+# WeChat DevTools local/private config
+wechat-miniprogram/project.private.config.json
 
 # Release signing info with sensitive data
 RELEASE_INFO.md

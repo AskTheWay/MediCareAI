@@ -1,0 +1,116 @@
+# MedicareAI 标识替换为“健康助手”说明
+
+## 背景
+
+本次说明用于记录项目中 `MediCareAI` / `MedicareAI` 品牌文案替换为“健康助手”的当前完成情况。
+
+当前替换目标是面向用户可见的产品展示名称，不等同于重命名仓库、Docker 项目、数据库、包名、接口路径等技术标识。
+
+## 已替换范围
+
+### 网页入口
+
+- `frontend/index.html`
+  - 页面 `description` 已改为“健康助手 - 智能疾病管理系统”
+  - 页面 `<title>` 已改为“健康助手”
+- `frontend/public/index.html`
+  - 页面 `description` 已改为“健康助手 - 智能疾病管理系统”
+  - 页面 `<title>` 已改为“健康助手”
+
+### 全局前端配置
+
+- `frontend/src/lib/config.ts`
+  - `APP_NAME` 已改为“健康助手”
+
+### 三端布局标题
+
+- `frontend/src/components/layout/AdminLayout.tsx`
+  - 管理员端侧边栏品牌名已改为“健康助手”
+- `frontend/src/components/layout/DoctorLayout.tsx`
+  - 医生端侧边栏品牌名已改为“健康助手”
+- `frontend/src/components/layout/PatientLayout.tsx`
+  - 患者端侧边栏品牌名已改为“健康助手”
+
+### 登录、注册与验证页面
+
+- `frontend/src/pages/auth/AdminLoginPage.tsx`
+  - 管理员登录页标题与介绍文案已改为“健康助手”
+- `frontend/src/pages/auth/DoctorLoginPage.tsx`
+  - 医生登录页标题与介绍文案已改为“健康助手”
+- `frontend/src/pages/auth/LoginPage.tsx`
+  - 患者登录页标题与“关于健康助手”介绍文案已改为“健康助手”
+- `frontend/src/pages/auth/RegisterPage.tsx`
+  - 注册页标题、用户协议、隐私政策等展示文案已改为“健康助手”
+- `frontend/src/pages/auth/DoctorRegister.tsx`
+  - 医生注册页标题已改为“健康助手”
+- `frontend/src/pages/auth/PlatformSelect.tsx`
+  - 平台选择页标题与页脚已改为“健康助手”
+- `frontend/src/pages/auth/VerifyEmail.tsx`
+  - 邮箱验证页标题已改为“健康助手”
+
+## 当前仍保留 `MediCareAI` 的位置
+
+### 患者端页面
+
+以下页面仍存在用户可见的 `MediCareAI` 文案，后续如需全量品牌替换，应继续处理：
+
+- `frontend/src/pages/patient/Dashboard.tsx`
+- `frontend/src/pages/patient/Profile.tsx`
+- `frontend/src/pages/patient/CompleteProfile.tsx`
+- `frontend/src/pages/patient/MedicalRecords.tsx`
+- `frontend/src/pages/patient/MedicalRecordDetail.tsx`
+- `frontend/src/pages/patient/SymptomSubmit.tsx`
+- `frontend/src/pages/patient/SymptomChat.tsx`
+
+### 邮件配置与邮件模板
+
+以下位置仍保留 `MediCareAI`，会影响邮件标题、邮件正文、发件人名称或邮件配置测试内容：
+
+- `backend/app/services/email_templates.py`
+- `backend/app/services/email_service.py`
+- `backend/app/api/api_v1/endpoints/email_config.py`
+- `frontend/src/pages/admin/EmailConfig.tsx`
+- `.env`
+- `.env.example`
+- `backend/app/core/config.py`
+- `backend/app/models/models.py`
+
+### 后端内部服务信息
+
+以下位置仍保留 `MediCareAI`，主要用于 API 标题、启动日志、健康检查返回值或代码注释：
+
+- `backend/app/main.py`
+- `backend/app/core/config.py`
+- `frontend/src/types/index.ts`
+
+## 保留原因
+
+当前没有直接修改所有 `MediCareAI` 出现位置，主要基于以下考虑：
+
+- 邮件模板和邮件配置属于独立功能域，修改后需要额外验证邮件发送、模板渲染和管理员配置页展示。
+- `.env`、`.env.example`、数据库模型默认值涉及运行配置和初始化默认值，修改前应确认是否需要保持兼容旧数据。
+- `backend/app/main.py` 中的 API 标题、服务名和日志属于技术标识，不一定需要跟随用户端品牌一起替换。
+- Docker 项目名、容器名、数据库名、包名、接口路径等技术标识暂不建议改动，避免影响启动、部署、数据卷、反向代理和外部调用。
+
+## 后续全量替换建议
+
+如果目标是全系统统一展示“健康助手”，建议按以下顺序继续：
+
+1. 先替换患者端页面的用户可见文案。
+2. 再替换管理员邮件配置页、后端邮件模板和邮件默认发件人名称。
+3. 最后评估是否替换 API 标题、健康检查服务名、代码注释和文档中的 `MediCareAI`。
+4. 替换后运行前端构建、后端启动检查，并至少验证登录页、患者首页、邮件配置测试和邮箱验证邮件。
+
+## 验证方式
+
+可使用以下命令检查剩余品牌文案：
+
+```powershell
+rg -n "MediCareAI|MedicareAI|健康助手" frontend backend .env .env.example docs -S
+```
+
+如只想检查仍未替换的旧品牌文案：
+
+```powershell
+rg -n "MediCareAI|MedicareAI" frontend backend .env .env.example docs -S
+```

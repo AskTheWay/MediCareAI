@@ -73,7 +73,8 @@ class PatientReplyResponse(BaseModel):
         from_attributes = True
 
 
-@router.post("/", response_model=MedicalCaseResponse)
+@router.post("", response_model=MedicalCaseResponse)
+@router.post("/", response_model=MedicalCaseResponse, include_in_schema=False)
 async def create_medical_case(
     case_data: MedicalCaseCreate,
     current_user: User = Depends(get_current_active_user),
@@ -104,7 +105,8 @@ async def create_medical_case(
         )
 
 
-@router.get("/", response_model=List[MedicalCaseResponse])
+@router.get("", response_model=List[MedicalCaseResponse])
+@router.get("/", response_model=List[MedicalCaseResponse], include_in_schema=False)
 async def get_my_medical_cases(
     skip: int = 0,
     limit: int = 20,

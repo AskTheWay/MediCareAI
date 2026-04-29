@@ -5,12 +5,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    strictPort: true,
     host: true,
     allowedHosts: ['all', 'medicare_frontend', 'openmedicareai.life', 'localhost', '8.137.177.147'],
-    hmr: false,  // 生产环境禁用 HMR
+    watch: {
+      usePolling: true,
+    },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://medicare_backend:8000',
         changeOrigin: true,
       },
     },

@@ -31,6 +31,8 @@ import type {
   PaginatedResponse,
   AIProvider,
   KnowledgeSource,
+  SymptomChatMessage,
+  SymptomChatResponse,
 } from '../types';
 
 const apiClient: AxiosInstance = axios.create({
@@ -293,6 +295,29 @@ export const documentsApi = {
 
 export const aiApi = {
   diagnose: (data: DiagnosisRequest) => api.post<AIFeedback>('/ai/comprehensive-diagnosis', data),
+  symptomChat: (data: {
+    message: string;
+    history?: SymptomChatMessage[];
+    files?: File[];
+    language?: 'zh' | 'en';
+  }) => {
+    const formData = new FormData();
+    formData.append('message', data.message);
+    formData.append('history', JSON.stringify(data.history || []));
+    formData.append('language', data.language || 'zh');
+    (data.files || []).forEach((file) => {
+      formData.append('files', file);
+    });
+
+    return apiClient
+      .post<ApiResponse<SymptomChatResponse>>('/ai/symptom-chat', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 300000,
+      })
+      .then((response) => (response.data.data || response.data) as SymptomChatResponse);
+  },
   diagnoseStream: (
     data: DiagnosisRequest,
     onChunk: (chunk: string) => void,

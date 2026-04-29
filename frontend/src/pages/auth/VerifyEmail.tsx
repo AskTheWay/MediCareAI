@@ -76,7 +76,7 @@ const VerifyEmailPage: React.FC = () => {
           <Box sx={{ mb: 4 }}>
             <LocalHospital sx={{ fontSize: 64, color: '#667eea', mb: 2 }} />
             <Typography variant="h4" component="h1" fontWeight="bold" color="primary">
-              MediCareAI
+              健康助手
             </Typography>
             <Typography variant="subtitle1" color="text.secondary">
               智能疾病管理系统

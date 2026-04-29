@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # Embedding model settings (Qwen)
 
     embedding_api_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    embedding_api_key: str = ""
     embedding_model_id: str = "text-embedding-v3"
     embedding_dimensions: int = 1024
     
